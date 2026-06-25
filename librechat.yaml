@@ -13,6 +13,7 @@ mcpServers:
       AZURE_AI_SEARCH_ENDPOINT: "${AZURE_AI_SEARCH_ENDPOINT}"
       AZURE_AI_SEARCH_API_KEY: "${AZURE_AI_SEARCH_API_KEY}"
       HR_INDEX_NAMES: "${HR_INDEX_NAMES}"
+      DELTEK_AZURE_AI_SEARCH_INDEX_NAME: "${DELTEK_AZURE_AI_SEARCH_INDEX_NAME}"
 
   bim-search:
     type: stdio
@@ -52,6 +53,7 @@ mcpServers:
       AZURE_AI_SEARCH_ENDPOINT: "${AZURE_AI_SEARCH_ENDPOINT}"
       AZURE_AI_SEARCH_API_KEY: "${AZURE_AI_SEARCH_API_KEY}"
       DELTEK_AZURE_AI_SEARCH_INDEX_NAME: "${DELTEK_AZURE_AI_SEARCH_INDEX_NAME}"
+      HR_INDEX_NAMES: "${HR_INDEX_NAMES}"
 
 interface:
   customWelcome: "Hey {{user.name}}, Norm here. What are we solving today?"
