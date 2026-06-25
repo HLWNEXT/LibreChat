@@ -2,58 +2,28 @@ version: 1.3.13
 
 mcpServers:
   hr-search:
-    type: stdio
-    command: npx
-    args:
-      - --prefix
-      - D:/Github/hlw-chatbot-dev
-      - tsx
-      - D:/Github/hlw-chatbot-dev/src/mcp-servers/hr/index.ts
-    env:
-      AZURE_AI_SEARCH_ENDPOINT: "${AZURE_AI_SEARCH_ENDPOINT}"
-      AZURE_AI_SEARCH_API_KEY: "${AZURE_AI_SEARCH_API_KEY}"
-      HR_AZURE_AI_SEARCH_INDEX_NAMES: "${HR_AZURE_AI_SEARCH_INDEX_NAMES}"
-      DELTEK_AZURE_AI_SEARCH_INDEX_NAME: "${DELTEK_AZURE_AI_SEARCH_INDEX_NAME}"
+    type: sse
+    url: "${MCP_BASE_URL}/mcp/hr/sse"
+    headers:
+      Authorization: "Bearer ${MCP_SECRET_TOKEN}"
 
   bim-search:
-    type: stdio
-    command: npx
-    args:
-      - --prefix
-      - D:/Github/hlw-chatbot-dev
-      - tsx
-      - D:/Github/hlw-chatbot-dev/src/mcp-servers/bim/index.ts
-    env:
-      AZURE_AI_SEARCH_ENDPOINT: "${AZURE_AI_SEARCH_ENDPOINT}"
-      AZURE_AI_SEARCH_API_KEY: "${AZURE_AI_SEARCH_API_KEY}"
-      BIM_AZURE_AI_SEARCH_INDEX_NAMES: "${BIM_AZURE_AI_SEARCH_INDEX_NAMES}"
+    type: sse
+    url: "${MCP_BASE_URL}/mcp/bim/sse"
+    headers:
+      Authorization: "Bearer ${MCP_SECRET_TOKEN}"
 
   bim-training-search:
-    type: stdio
-    command: npx
-    args:
-      - --prefix
-      - D:/Github/hlw-chatbot-dev
-      - tsx
-      - D:/Github/hlw-chatbot-dev/src/mcp-servers/bim-training/index.ts
-    env:
-      PS_AZURE_AI_SEARCH_ENDPOINT: "${PS_AZURE_AI_SEARCH_ENDPOINT}"
-      PS_AZURE_AI_SEARCH_API_KEY: "${PS_AZURE_AI_SEARCH_API_KEY}"
-      PS_AZURE_AI_SEARCH_INDEX_NAME: "${PS_AZURE_AI_SEARCH_INDEX_NAME}"
+    type: sse
+    url: "${MCP_BASE_URL}/mcp/bim-training/sse"
+    headers:
+      Authorization: "Bearer ${MCP_SECRET_TOKEN}"
 
   deltek-search:
-    type: stdio
-    command: npx
-    args:
-      - --prefix
-      - D:/Github/hlw-chatbot-dev
-      - tsx
-      - D:/Github/hlw-chatbot-dev/src/mcp-servers/deltek/index.ts
-    env:
-      AZURE_AI_SEARCH_ENDPOINT: "${AZURE_AI_SEARCH_ENDPOINT}"
-      AZURE_AI_SEARCH_API_KEY: "${AZURE_AI_SEARCH_API_KEY}"
-      DELTEK_AZURE_AI_SEARCH_INDEX_NAME: "${DELTEK_AZURE_AI_SEARCH_INDEX_NAME}"
-      HR_AZURE_AI_SEARCH_INDEX_NAMES: "${HR_AZURE_AI_SEARCH_INDEX_NAMES}"
+    type: sse
+    url: "${MCP_BASE_URL}/mcp/deltek/sse"
+    headers:
+      Authorization: "Bearer ${MCP_SECRET_TOKEN}"
 
 interface:
   customWelcome: "Hey {{user.name}}, Norm here. What are we solving today?"
