@@ -58,6 +58,8 @@ Please try each scenario below, note what response you get, and flag anything th
 
 **Expected:** Norm should hand off to the BIM specialist and return answers from BIM documentation.
 
+> **If BIM questions return no results or an error:** flag it — the BIM index may not be fully configured in this test environment yet.
+
 ---
 
 ### BIM Training questions
