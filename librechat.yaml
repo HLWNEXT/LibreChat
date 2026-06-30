@@ -1,27 +1,33 @@
 version: 1.3.13
 
+fileStrategy: "azure_blob"
+
+mcpSettings:
+  allowedAddresses:
+    - "localhost:3978"
+
 mcpServers:
   hr-search:
-    type: sse
-    url: "${MCP_BASE_URL}/mcp/hr/sse"
+    type: streamable-http
+    url: "${MCP_BASE_URL}/mcp/hr"
     headers:
       Authorization: "Bearer ${MCP_SECRET_TOKEN}"
 
   bim-search:
-    type: sse
-    url: "${MCP_BASE_URL}/mcp/bim/sse"
+    type: streamable-http
+    url: "${MCP_BASE_URL}/mcp/bim"
     headers:
       Authorization: "Bearer ${MCP_SECRET_TOKEN}"
 
   bim-training-search:
-    type: sse
-    url: "${MCP_BASE_URL}/mcp/bim-training/sse"
+    type: streamable-http
+    url: "${MCP_BASE_URL}/mcp/bim-training"
     headers:
       Authorization: "Bearer ${MCP_SECRET_TOKEN}"
 
   deltek-search:
-    type: sse
-    url: "${MCP_BASE_URL}/mcp/deltek/sse"
+    type: streamable-http
+    url: "${MCP_BASE_URL}/mcp/deltek"
     headers:
       Authorization: "Bearer ${MCP_SECRET_TOKEN}"
 
