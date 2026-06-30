@@ -333,7 +333,7 @@ async function main() {
   const oldAgents = await agentsCol.find({ name: { $in: seedNames }, author }).project({ _id: 1 }).toArray();
   if (oldAgents.length > 0) {
     const oldIds = oldAgents.map((a) => a._id);
-    await aclCol.deleteMany({ resourceId: { $in: oldIds.map(String) } });
+    await aclCol.deleteMany({ resourceId: { $in: oldIds } });
     await agentsCol.deleteMany({ _id: { $in: oldIds } });
     console.log(`Removed ${oldAgents.length} previously seeded agent(s) and their ACL entries`);
   }
@@ -372,13 +372,13 @@ async function main() {
   const aclDocs = docs.flatMap((doc) => [
     {
       principalType: 'user',
-      principalId: author.toString(),
+      principalId: author,
       principalModel: 'User',
       resourceType: 'agent',
-      resourceId: doc._id.toString(),
+      resourceId: doc._id,
       permBits: 15,
       roleId: agentOwnerRoleId,
-      grantedBy: author.toString(),
+      grantedBy: author,
       grantedAt: now,
       createdAt: now,
       updatedAt: now,
@@ -386,13 +386,13 @@ async function main() {
     },
     {
       principalType: 'user',
-      principalId: author.toString(),
+      principalId: author,
       principalModel: 'User',
       resourceType: 'remoteAgent',
-      resourceId: doc._id.toString(),
+      resourceId: doc._id,
       permBits: 15,
       roleId: remoteAgentOwnerRoleId,
-      grantedBy: author.toString(),
+      grantedBy: author,
       grantedAt: now,
       createdAt: now,
       updatedAt: now,
