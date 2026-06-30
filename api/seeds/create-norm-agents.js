@@ -7,7 +7,7 @@
  */
 'use strict';
 
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
 const { randomBytes } = require('crypto');
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/Norm-LibreChat';
@@ -297,6 +297,8 @@ async function main() {
   const db = client.db(DB_NAME);
   const usersCol = db.collection('users');
   const agentsCol = db.collection('agents');
+  const aclCol = db.collection('aclentries');
+  const rolesCol = db.collection('accessroles');
 
   const adminUser =
     (await usersCol.findOne({ role: 'ADMIN' })) ??
@@ -310,11 +312,41 @@ async function main() {
   const authorName = adminUser.name || adminUser.username || 'Admin';
   const now = new Date();
 
-  const seedNames = ['HR Specialist', 'BIM Specialist', 'BIM Training Specialist', 'Deltek Specialist', 'IT Specialist', 'Norm'];
-  const removed = await agentsCol.deleteMany({ name: { $in: seedNames }, author });
-  if (removed.deletedCount > 0) {
-    console.log(`Removed ${removed.deletedCount} previously seeded agent(s)`);
+  // Find owner role IDs — derive from existing ACL entries first, fall back to accessroles
+  const existingAgentAcl = await aclCol.findOne({ resourceType: 'agent', permBits: 15 });
+  const existingRemoteAcl = await aclCol.findOne({ resourceType: 'remoteAgent', permBits: 15 });
+
+  const roles = await rolesCol.find({}).toArray();
+  const agentOwnerRoleId =
+    existingAgentAcl?.roleId ??
+    roles.find((r) => r.name === 'com_ui_role_owner')?._id?.toString();
+  const remoteAgentOwnerRoleId =
+    existingRemoteAcl?.roleId ??
+    roles.find((r) => r.name === 'com_ui_remote_agent_role_owner')?._id?.toString();
+
+  if (!agentOwnerRoleId || !remoteAgentOwnerRoleId) {
+    throw new Error('Could not find owner role IDs — run LibreChat at least once to initialise roles');
   }
+
+  // Remove previously seeded agents and their ACL entries
+  const seedNames = ['HR Specialist', 'BIM Specialist', 'BIM Training Specialist', 'Deltek Specialist', 'IT Specialist', 'Norm'];
+  const oldAgents = await agentsCol.find({ name: { $in: seedNames }, author }).project({ _id: 1 }).toArray();
+  if (oldAgents.length > 0) {
+    const oldIds = oldAgents.map((a) => a._id);
+    await aclCol.deleteMany({ resourceId: { $in: oldIds.map(String) } });
+    await agentsCol.deleteMany({ _id: { $in: oldIds } });
+    console.log(`Removed ${oldAgents.length} previously seeded agent(s) and their ACL entries`);
+  }
+
+  // Pre-generate MongoDB _id values so we can reference them in ACL entries before insert
+  const mongoIds = {
+    hr: new ObjectId(),
+    bim: new ObjectId(),
+    bimTraining: new ObjectId(),
+    deltek: new ObjectId(),
+    it: new ObjectId(),
+    norm: new ObjectId(),
+  };
 
   const ids = {
     hr: agentId(),
@@ -325,12 +357,52 @@ async function main() {
     norm: agentId(),
   };
 
-  const docs = buildAgents(ids, author, authorName, now);
-  const result = await agentsCol.insertMany(docs);
-  console.log(`\nCreated ${result.insertedCount} agents:`);
+  const docs = buildAgents(ids, author, authorName, now).map((doc, i) => ({
+    _id: Object.values(mongoIds)[i],
+    ...doc,
+  }));
+
+  await agentsCol.insertMany(docs);
+  console.log(`\nCreated ${docs.length} agents:`);
   for (const doc of docs) {
-    console.log(`  ${doc.name.padEnd(25)} ${doc.id}`);
+    console.log(`  ${doc.name.padEnd(25)} ${doc.id}  (db: ${doc._id})`);
   }
+
+  // Create ACL entries: each agent needs one "agent" entry and one "remoteAgent" entry
+  const aclDocs = docs.flatMap((doc) => [
+    {
+      principalType: 'user',
+      principalId: author.toString(),
+      principalModel: 'User',
+      resourceType: 'agent',
+      resourceId: doc._id.toString(),
+      permBits: 15,
+      roleId: agentOwnerRoleId,
+      grantedBy: author.toString(),
+      grantedAt: now,
+      createdAt: now,
+      updatedAt: now,
+      __v: 0,
+    },
+    {
+      principalType: 'user',
+      principalId: author.toString(),
+      principalModel: 'User',
+      resourceType: 'remoteAgent',
+      resourceId: doc._id.toString(),
+      permBits: 15,
+      roleId: remoteAgentOwnerRoleId,
+      grantedBy: author.toString(),
+      grantedAt: now,
+      createdAt: now,
+      updatedAt: now,
+      __v: 0,
+    },
+  ]);
+
+  await aclCol.insertMany(aclDocs);
+  console.log(`Created ${aclDocs.length} ACL entries (${aclDocs.length / 2} agents × 2)`);
+
   console.log('\nNorm edges:');
   for (const edge of docs.at(-1).edges) {
     const target = docs.find((d) => d.id === edge.to);
