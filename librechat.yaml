@@ -1,6 +1,6 @@
 version: 1.3.13
 
-fileStrategy: "local"
+fileStrategy: "azure_blob"
 
 mcpSettings:
   allowedAddresses:
