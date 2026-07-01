@@ -1,10 +1,10 @@
-# Agent Visibility (Admin-Only Listing) Implementation Plan
+# Agent Visibility (All / Admin-Only / Private Listing) Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Let an agent be hidden from the regular agent picker/listing for `USER`-role accounts while remaining fully visible to `ADMIN`-role accounts and fully usable as a multi-agent handoff target for everyone.
+**Goal:** Let an agent's owner control who sees it in the agent picker/listing — everyone, admins only, or just the owner — while it remains fully usable as a multi-agent handoff target for everyone regardless of this setting.
 
-**Architecture:** Add a `visibility` enum field (`'all' | 'admin'`, default `'all'`) to the Agent schema. The listing controller (`getListAgentsHandler`) adds a MongoDB filter excluding `visibility: 'admin'` agents when the requester's role isn't `ADMIN`. The handoff discovery path (`discoverConnectedAgents`) is deliberately left untouched — it fetches agents by exact ID and checks only ACL `VIEW` permission, never the listing query, so hidden agents stay reachable via handoff for all users regardless of this field. A new client-side dropdown (mirroring the existing `AgentCategorySelector`) lets an agent owner/admin set this from the Agent Builder panel.
+**Architecture:** Add a `visibility` enum field (`'all' | 'admin' | 'private'`, default `'all'`) to the Agent schema. The listing controller (`getListAgentsHandler`) adds a MongoDB filter: `visibility: 'admin'` agents are excluded from the listing unless the requester is `ADMIN`; `visibility: 'private'` agents are excluded from the listing for everyone except the agent's own `author` (owner), including admins — "private" means private, full stop, for listing purposes. The handoff discovery path (`discoverConnectedAgents`) is deliberately left untouched — it fetches agents by exact ID and checks only ACL `VIEW` permission, never the listing query, so hidden agents stay reachable via handoff for all users regardless of this field. A new client-side dropdown (mirroring the existing `AgentCategorySelector`) lets an agent owner/admin set this from the Agent Builder panel.
 
 **Tech Stack:** Mongoose (data-schemas), Express (api), React + react-hook-form (client), Jest for tests.
 
@@ -58,12 +58,15 @@ In `packages/data-schemas/src/schema/agent.ts`, right after the `is_promoted` fi
     },
     /** Controls whether this agent appears in the general agent picker/listing.
      * 'all' (default): visible to everyone with VIEW access, as today.
-     * 'admin': excluded from the listing for non-ADMIN users, but still fully
-     * reachable via handoff/direct-ID lookup (see discoverConnectedAgents) —
-     * this only gates the picker, not the underlying ACL grant. */
+     * 'admin': excluded from the listing for non-ADMIN users.
+     * 'private': excluded from the listing for everyone except the agent's
+     * own `author`, including admins.
+     * In both restricted cases the agent stays fully reachable via
+     * handoff/direct-ID lookup (see discoverConnectedAgents) — this field
+     * only gates the picker, not the underlying ACL grant. */
     visibility: {
       type: String,
-      enum: ['all', 'admin'],
+      enum: ['all', 'admin', 'private'],
       default: 'all',
       index: true,
     },
@@ -125,7 +128,24 @@ it('excludes visibility=admin agents from the listing for a non-admin user', asy
   await getListAgentsHandler(req, res);
   expect(db.getListAgentsByAccess).toHaveBeenCalledWith(
     expect.objectContaining({
-      otherParams: expect.objectContaining({ visibility: { $ne: 'admin' } }),
+      otherParams: expect.objectContaining({
+        $and: expect.arrayContaining([{ visibility: { $ne: 'admin' } }]),
+      }),
+    }),
+  );
+});
+
+it('excludes visibility=private agents from the listing for a user who is not the author', async () => {
+  const req = mockRequest({ user: { id: 'user1', role: 'USER' } });
+  const res = mockResponse();
+  await getListAgentsHandler(req, res);
+  expect(db.getListAgentsByAccess).toHaveBeenCalledWith(
+    expect.objectContaining({
+      otherParams: expect.objectContaining({
+        $and: expect.arrayContaining([
+          { $or: [{ visibility: { $ne: 'private' } }, { author: 'user1' }] },
+        ]),
+      }),
     }),
   );
 });
@@ -136,7 +156,24 @@ it('does NOT filter visibility=admin agents out for an admin user', async () => 
   await getListAgentsHandler(req, res);
   expect(db.getListAgentsByAccess).toHaveBeenCalledWith(
     expect.objectContaining({
-      otherParams: expect.not.objectContaining({ visibility: expect.anything() }),
+      otherParams: expect.objectContaining({
+        $and: [{ $or: [{ visibility: { $ne: 'private' } }, { author: 'admin1' }] }],
+      }),
+    }),
+  );
+});
+
+it('still excludes visibility=private agents from the listing for an admin who is not the author', async () => {
+  const req = mockRequest({ user: { id: 'admin1', role: 'ADMIN' } });
+  const res = mockResponse();
+  await getListAgentsHandler(req, res);
+  expect(db.getListAgentsByAccess).toHaveBeenCalledWith(
+    expect.objectContaining({
+      otherParams: expect.objectContaining({
+        $and: expect.arrayContaining([
+          { $or: [{ visibility: { $ne: 'private' } }, { author: 'admin1' }] },
+        ]),
+      }),
     }),
   );
 });
@@ -157,15 +194,29 @@ In `api/server/controllers/agents/v1.js`, add the import at the top (mirror how 
 const { SystemRoles } = require('librechat-data-provider');
 ```
 
-Then in `getListAgentsHandler`, right after the existing `promoted` filter block (after line 967, before the search filter):
+Then in `getListAgentsHandler`, right after the existing `promoted` filter block (after line 967, before the search filter — this ordering matters, see note below).
 
 ```js
-    // Hide agents restricted to admin-only visibility from non-admin users.
-    // Handoff/direct-ID access (discoverConnectedAgents) is unaffected by this —
-    // it never goes through this listing query.
+    // Hide agents restricted to admin-only or private visibility from users
+    // who aren't allowed to see them. Handoff/direct-ID access
+    // (discoverConnectedAgents) is unaffected by this — it never goes
+    // through this listing query.
+    //
+    // NOTE: uses `filter.$and`, not `filter.$or`, deliberately — the search
+    // block below this one (unmodified) sets `filter.$or` for name/description
+    // matching. A top-level `$and` and a top-level `$or` can coexist on the
+    // same MongoDB query without conflict; two assignments to `$or` would
+    // silently clobber each other, which is why the private-visibility
+    // condition (which itself needs an `$or`) is nested one level inside
+    // `$and` instead of living at the top level.
+    const visibilityConditions = [];
     if (req.user.role !== SystemRoles.ADMIN) {
-      filter.visibility = { $ne: 'admin' };
+      visibilityConditions.push({ visibility: { $ne: 'admin' } });
     }
+    visibilityConditions.push({
+      $or: [{ visibility: { $ne: 'private' } }, { author: userId }],
+    });
+    filter.$and = (filter.$and || []).concat(visibilityConditions);
 ```
 
 **Step 4: Run test to verify it passes**
@@ -182,7 +233,7 @@ Expected: all PASS
 
 ```bash
 git add api/server/controllers/agents/v1.js api/server/controllers/agents/__tests__/v1.test.js
-git commit -m "feat: exclude admin-only-visibility agents from listing for non-admin users"
+git commit -m "feat: exclude admin-only and private-visibility agents from listing for unauthorized users"
 ```
 
 ---
@@ -199,14 +250,18 @@ This task is a deliberate regression test with **no implementation change** — 
 Find the existing test setup for `discoverConnectedAgents` (there should already be tests covering the ACL-skip warning we saw in production logs — `[discoverConnectedAgents] User ... lacks VIEW access to handoff agent ..., skipping`). Add:
 
 ```ts
-it('reaches a visibility=admin handoff target for a non-admin user, as long as they have ACL VIEW', async () => {
-  // Arrange: a target agent with visibility: 'admin' but a public ACL VIEW grant
-  // (mirror whatever fixture pattern the existing discoverConnectedAgents tests use
-  // for creating a reachable handoff target — do not invent a new mocking approach)
-  // Act: call discoverConnectedAgents with a non-admin requesting user
-  // Assert: the target agent IS included in the resulting agentConfigs/edges,
-  // i.e. it was NOT skipped — visibility is irrelevant to this code path.
-});
+it.each(['admin', 'private'])(
+  'reaches a visibility=%s handoff target for a non-owner, non-admin user, as long as they have ACL VIEW',
+  async (visibility) => {
+    // Arrange: a target agent with the given `visibility` value but a public
+    // ACL VIEW grant (mirror whatever fixture pattern the existing
+    // discoverConnectedAgents tests use for creating a reachable handoff
+    // target — do not invent a new mocking approach)
+    // Act: call discoverConnectedAgents with a non-admin, non-author requesting user
+    // Assert: the target agent IS included in the resulting agentConfigs/edges,
+    // i.e. it was NOT skipped — visibility is irrelevant to this code path.
+  },
+);
 ```
 
 **Step 2: Run and verify it passes without touching `discovery.ts`**
@@ -274,6 +329,7 @@ import { cn } from '~/utils';
 const VISIBILITY_OPTIONS = [
   { label: 'com_ui_agent_visibility_all', value: 'all' },
   { label: 'com_ui_agent_visibility_admin', value: 'admin' },
+  { label: 'com_ui_agent_visibility_private', value: 'private' },
 ] as const;
 
 const AgentVisibilitySelector: React.FC<{ className?: string }> = ({ className }) => {
@@ -325,6 +381,7 @@ Add to `client/src/locales/en/translation.json` (English keys only — other lan
 ```json
 "com_ui_agent_visibility_all": "Everyone",
 "com_ui_agent_visibility_admin": "Admins only",
+"com_ui_agent_visibility_private": "Only me",
 "com_ui_agent_visibility_selector_placeholder": "Search visibility options",
 "com_ui_agent_visibility_selector_aria": "Agent visibility selector"
 ```
@@ -338,7 +395,7 @@ import AgentVisibilitySelector from './AgentVisibilitySelector';
 <AgentVisibilitySelector className="w-full" />
 ```
 
-Only ADMIN users should see this control at all — a regular user shouldn't be able to hide their own agent from other regular users' pickers via this UI (that's an admin-level governance action in this design). Gate the render with the current user's role, matching whatever hook/pattern the codebase already uses elsewhere to check `role === 'ADMIN'` client-side (search `client/src/hooks` for an existing `useAuthContext`/`user.role` check pattern before inventing one).
+Show this control to anyone who has EDIT access to the agent (i.e. its owner, same gating as the rest of the Agent Builder form — no additional role check needed). Reasoning: all three values are restrictions the owner applies to their *own* resource — 'private' and 'admin' only ever make an agent *less* visible to other regular users, never more, so there's no privilege-escalation concern in letting a non-admin owner pick any of the three for their own agent. This differs from the assumption in an earlier draft of this plan (which gated the whole control to ADMIN-only) — revised after adding the 'private' tier, since "hide my own agent from everyone but me" is an ordinary self-service action, not a governance action.
 
 **Step 4: Run test to verify it passes**
 
@@ -428,5 +485,5 @@ Once Tasks 1-6 are done and reviewed:
 ### Open questions to resolve before/during implementation (not blocking plan creation, but flag to the user)
 
 1. Should `visibility: 'admin'` also apply to `GET /agents/:id` direct-load (fully blocking non-admins from opening a hidden agent even via direct link), or is "hidden from the picker only" the intended, narrower scope? This plan implements the narrower scope per the explicit ask ("hide from the list"). Revisit if that turns out to be insufficient.
-2. Should the visibility selector be editable by the agent's owner even if they're not ADMIN (self-service hiding of their own agent), or admin-only as drafted in Task 5? Drafted as admin-only since the underlying motivation (governance over what regular users can publish/hide) suggests centralized control, but confirm this matches intent before implementing Task 5.
+2. ~~Should the visibility selector be editable by the agent's owner even if they're not ADMIN~~ — resolved: yes, any owner can set any of the three values on their own agent (see Task 5 reasoning). Revisit only if a real misuse case shows up.
 3. `'all' | 'admin'` is deliberately a minimal two-value enum, not a general RBAC/group system, to match YAGNI — extend later (e.g. `'group:<id>'`) only if an actual need shows up.
