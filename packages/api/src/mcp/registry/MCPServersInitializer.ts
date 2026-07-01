@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import { logger } from '@librechat/data-schemas';
+import { extractEnvVariable } from 'librechat-data-provider';
 import type * as t from '~/mcp/types';
 import { registryStatusCache as statusCache } from './cache/RegistryStatusCache';
 import { MCPServersRegistry } from './MCPServersRegistry';
@@ -155,7 +156,9 @@ export class MCPServersInitializer {
   private static logParsedConfig(serverName: string, config: t.ParsedServerConfig): void {
     const prefix = MCPServersInitializer.prefix(serverName);
     logger.info(`${prefix} -------------------------------------------------┐`);
-    logger.info(`${prefix} URL: ${config.url ? sanitizeUrlForLogging(config.url) : 'N/A'}`);
+    logger.info(
+      `${prefix} URL: ${config.url ? sanitizeUrlForLogging(extractEnvVariable(config.url)) : 'N/A'}`,
+    );
     logger.info(`${prefix} OAuth Required: ${config.requiresOAuth}`);
     logger.info(`${prefix} Capabilities: ${config.capabilities}`);
     logger.info(`${prefix} Tools: ${config.tools}`);
