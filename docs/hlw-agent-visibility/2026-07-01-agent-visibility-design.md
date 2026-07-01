@@ -238,7 +238,81 @@ git commit -m "feat: exclude admin-only and private-visibility agents from listi
 
 ---
 
-### Task 4: Confirm handoff discovery is unaffected (regression guard, no code change)
+### Task 4: Fix the Marketplace listing endpoint so it enforces the same `visibility` rule
+
+**Why this task exists:** while researching this plan, tracing `client/src/components/Agents/AgentGrid.tsx` → `useMarketplaceAgentsInfiniteQuery` → `dataService.getMarketplaceAgents()` showed it calls `GET /api/agents/marketplace`. But `api/server/routes/agents/v1.js` has no route registered for `/marketplace` — the generic `router.get('/:id', ...)` (registered at line 58, before `router.get('/', ...)` at line 156) would catch that request first and treat the literal string `"marketplace"` as an agent ID, which doesn't exist, returning 404 via `getAgentHandler`. This wasn't confirmed live (browser session dropped mid-investigation) — **Step 1 below confirms it for real before changing anything.** Don't skip straight to "fixing" a bug that might not exist.
+
+Even if this routing gap doesn't turn out to be real (e.g. there's a rewrite/proxy rule elsewhere that this plan's author missed), the underlying goal of this task stands regardless: the Marketplace grid must filter through the exact same `visibility` logic as the regular agent picker (Task 3), not a second, independently-maintained copy of it — two divergent visibility checks for "can this user see this agent" is a guaranteed source of future drift bugs.
+
+**Files:**
+- Modify: `api/server/routes/agents/v1.js` (add a `/marketplace` route, positioned *before* the `/:id` route at line 58 — ordering matters, see Step 3)
+- Test: `api/server/routes/agents/__tests__/v1.test.js` or wherever Task 3's controller tests live (reuse that file/pattern)
+
+**Step 1: Confirm the routing gap for real**
+
+Log into the running app (local Docker or the Azure deployment), open browser DevTools → Network tab, navigate to the Marketplace page (`/agents` or wherever it's linked from the sidebar — check `client/src/routes` for the actual mounted path), and find the actual request to `.../api/agents/marketplace`. Record the real response status and body.
+
+- If it's a 404 with `{"error": "Agent not found"}` (the `getAgentHandler` 404 shape) — the gap is confirmed exactly as suspected. Proceed to Step 2.
+- If it's a 200 with a real agent list — this task's premise is wrong; stop, figure out what actually serves that route (grep more broadly, check for a reverse proxy rule or a route registered somewhere unexpected), update this plan's "why this task exists" note with the correction, and skip to just verifying Task 3's filter is already reused there (likely nothing further to do).
+
+**Step 2: Write the failing test (assuming Step 1 confirmed the gap)**
+
+```js
+it('GET /agents/marketplace returns a filtered agent list, not a 404 agent-not-found response', async () => {
+  const req = mockRequest({ user: { id: 'user1', role: 'USER' }, query: { requiredPermission: '1' } });
+  const res = mockResponse();
+  await getMarketplaceAgentsHandler(req, res); // or however the route ends up wired — adjust to match Step 3's actual implementation
+  expect(res.status).not.toHaveBeenCalledWith(404);
+  expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: expect.any(Array) }));
+});
+
+it('applies the same visibility filter as the regular agent listing for the same user', async () => {
+  // Call both the /agents and /agents/marketplace handlers (or the shared function they
+  // both delegate to) with an identical req.user, and assert db.getListAgentsByAccess
+  // was invoked with the SAME otherParams.$and visibility conditions both times —
+  // proving there's exactly one visibility rule, not two.
+});
+```
+
+**Step 3: Run test to verify it fails**
+
+Run: `cd api && npx jest server/routes/agents/__tests__/v1.test.js -t "marketplace"`
+Expected: FAIL (route doesn't exist / returns 404 today).
+
+**Step 4: Write minimal implementation**
+
+Register a `/marketplace` route in `api/server/routes/agents/v1.js` reusing the existing `getListAgents` handler — do **not** write a second handler function; that would immediately reintroduce the two-systems drift risk this task exists to prevent. Add this **before** line 58's `router.get('/:id', ...)` (Express matches routes in registration order — a route added after `/:id` would still get swallowed by it):
+
+```js
+/**
+ * Marketplace view of agents — same ACL/visibility rules as the regular
+ * listing (GET /), just a distinct URL for the dedicated browse UI.
+ * @route GET /agents/marketplace
+ */
+router.get('/marketplace', checkAgentAccess, v1.getListAgents);
+```
+
+If `getListAgentsHandler` needs to distinguish "called from marketplace" vs "called from the composer picker" for any reason (e.g. different default `limit`, or forcing `promoted`-aware sorting) — check whether the `promoted`/`category`/`search`/`limit` query params the client already sends (see `useMarketplaceAgentsInfiniteQuery`'s params in Task-adjacent client code) already cover that. Do not add an `isMarketplace` branch inside the handler for visibility purposes specifically — visibility filtering must stay identical for both callers.
+
+**Step 5: Run test to verify it passes**
+
+Run: `cd api && npx jest server/routes/agents/__tests__/v1.test.js -t "marketplace"`
+Expected: PASS
+
+**Step 6: Manual verification**
+
+Repeat Step 1's browser check — confirm the Marketplace page now loads a real agent grid, and that a non-admin test user does not see the 5 `visibility: 'admin'` specialist agents there (once Task 7's data migration has run), while an admin account does.
+
+**Step 7: Commit**
+
+```bash
+git add api/server/routes/agents/v1.js api/server/routes/agents/__tests__/v1.test.js
+git commit -m "fix: register missing /agents/marketplace route, reusing the standard listing handler"
+```
+
+---
+
+### Task 5: Confirm handoff discovery is unaffected (regression guard, no code change)
 
 **Files:**
 - Test only: `packages/api/src/agents/__tests__/discovery.test.ts` (check exact filename: `find packages/api/src/agents/__tests__ -iname "*discovery*"`)
@@ -278,7 +352,7 @@ git commit -m "test: confirm handoff discovery ignores agent visibility field"
 
 ---
 
-### Task 5: Client — add the Visibility selector component
+### Task 6: Client — add the Visibility selector component
 
 **Files:**
 - Create: `client/src/components/SidePanel/Agents/AgentVisibilitySelector.tsx` (copy `client/src/components/SidePanel/Agents/AgentCategorySelector.tsx` as the starting point — it's the exact pattern to mirror: a `Controller`-wrapped combobox bound to a single agent field via react-hook-form)
@@ -414,7 +488,7 @@ git commit -m "feat: add agent visibility selector UI (admin-only control)"
 
 ---
 
-### Task 6: Data migration — hide the 5 existing specialist agents
+### Task 7: Data migration — hide the 5 existing specialist agents
 
 **Files:**
 - Create: `scripts/agents/set-visibility.js` (one-off, reusable script — mirrors the direct-Mongo pattern already used for the earlier ACL grants; check `scripts/db/migrate.sh` from the Cosmos DB migration for this repo's convention on where standalone ops scripts live)
@@ -469,9 +543,9 @@ git commit -m "chore: add script to mark specialist agents admin-only-visible, r
 
 ---
 
-### Task 7: Rebuild and redeploy
+### Task 8: Rebuild and redeploy
 
-Once Tasks 1-6 are done and reviewed:
+Once Tasks 1-7 are done and reviewed:
 
 1. Rebuild the Docker image: `docker compose build api` (see `docker-compose.override.yml` from the earlier local Docker testing work — it's still gitignored and present locally).
 2. Retest locally: `docker compose up -d`, confirm the picker hides the 5 specialists for a non-admin test login, confirm handoff still works, confirm ADMIN accounts still see all 6 agents.
@@ -485,5 +559,5 @@ Once Tasks 1-6 are done and reviewed:
 ### Open questions to resolve before/during implementation (not blocking plan creation, but flag to the user)
 
 1. Should `visibility: 'admin'` also apply to `GET /agents/:id` direct-load (fully blocking non-admins from opening a hidden agent even via direct link), or is "hidden from the picker only" the intended, narrower scope? This plan implements the narrower scope per the explicit ask ("hide from the list"). Revisit if that turns out to be insufficient.
-2. ~~Should the visibility selector be editable by the agent's owner even if they're not ADMIN~~ — resolved: yes, any owner can set any of the three values on their own agent (see Task 5 reasoning). Revisit only if a real misuse case shows up.
+2. ~~Should the visibility selector be editable by the agent's owner even if they're not ADMIN~~ — resolved: yes, any owner can set any of the three values on their own agent (see Task 6 reasoning). Revisit only if a real misuse case shows up.
 3. `'all' | 'admin'` is deliberately a minimal two-value enum, not a general RBAC/group system, to match YAGNI — extend later (e.g. `'group:<id>'`) only if an actual need shows up.
