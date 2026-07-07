@@ -531,7 +531,8 @@ describe('formatToolContent', () => {
       expect(references?.[0]).toMatchObject({
         link: citationSource.citation,
         type: 'link',
-        attribution: citationSource.citation,
+        title: 'Worksets',
+        attribution: 'Worksets',
       });
       expect(references?.[0].snippet?.length).toBeLessThanOrEqual(303);
       expect(references?.[0].snippet).not.toContain('&rsquo;');

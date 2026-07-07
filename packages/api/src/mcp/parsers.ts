@@ -145,7 +145,7 @@ function buildMcpCitationContent(sources: McpCitationSource[]): {
       link: source.citation,
       type: 'link',
       title,
-      attribution: source.citation,
+      attribution: title,
       snippet: truncateSnippet(source.content),
     });
     lines.push(
