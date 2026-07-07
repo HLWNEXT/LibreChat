@@ -581,5 +581,84 @@ describe('formatToolContent', () => {
       const [, artifacts] = formatToolContent(result, 'openai');
       expect(artifacts).toBeUndefined();
     });
+
+    it('detects citations in one text item while leaving another plain-text item untouched', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          { type: 'text', text: JSON.stringify([citationSource]) },
+          { type: 'text', text: 'Some additional plain-text commentary.' },
+        ],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(content).toContain('\\ue202turn0ref0');
+      expect(content).toContain('Some additional plain-text commentary.');
+      expect(artifacts?.[Tools.mcp_search]?.references).toHaveLength(1);
+    });
+
+    it('rejects the whole array when it mixes citation-shaped and non-citation-shaped objects', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify([citationSource, { id: 1, name: 'not a citation' }]),
+          },
+        ],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(artifacts).toBeUndefined();
+      expect(content).toBe(JSON.stringify([citationSource, { id: 1, name: 'not a citation' }]));
+    });
+
+    it('rejects a citation array whose citation uses a non-http(s) URL scheme', () => {
+      const javascriptSource = {
+        content: 'Malicious content',
+        citation: 'javascript:alert(1)',
+        score: 1,
+      };
+      const dataUriSource = {
+        content: 'Malicious content',
+        citation: 'data:text/html,<script>alert(1)</script>',
+        score: 1,
+      };
+
+      const jsResult: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([javascriptSource]) }],
+      };
+      const [jsContent, jsArtifacts] = formatToolContent(jsResult, 'openai');
+      expect(jsArtifacts).toBeUndefined();
+      expect(jsContent).toBe(JSON.stringify([javascriptSource]));
+      expect(jsContent).not.toContain('\\ue202turn0ref0');
+
+      const dataResult: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([dataUriSource]) }],
+      };
+      const [, dataArtifacts] = formatToolContent(dataResult, 'openai');
+      expect(dataArtifacts).toBeUndefined();
+    });
+
+    it('caps the number of sources and truncates long per-source content', () => {
+      const manySources = Array.from({ length: 25 }, (_, i) => ({
+        content: 'x'.repeat(6000),
+        citation: `https://hlw.atlassian.net/wiki/spaces/PD/pages/${1000 + i}/Page${i}`,
+        score: i,
+      }));
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify(manySources) }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      const references = artifacts?.[Tools.mcp_search]?.references;
+      expect(references).toHaveLength(20);
+      expect(content).toContain('\\ue202turn0ref19');
+      expect(content).not.toContain('\\ue202turn0ref20');
+
+      expect(content).toContain(`${'x'.repeat(5000)}...`);
+      expect(content).not.toContain('x'.repeat(5001));
+    });
   });
 });

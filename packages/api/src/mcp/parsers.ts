@@ -60,6 +60,18 @@ interface McpCitationSource {
   score?: number;
 }
 
+const MAX_MCP_CITATION_SOURCES = 20;
+const MAX_MCP_CITATION_CONTENT_LENGTH = 5000;
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function isMcpCitationArray(value: unknown): value is McpCitationSource[] {
   return (
     Array.isArray(value) &&
@@ -69,7 +81,8 @@ function isMcpCitationArray(value: unknown): value is McpCitationSource[] {
         typeof item === 'object' &&
         item !== null &&
         typeof (item as McpCitationSource).content === 'string' &&
-        typeof (item as McpCitationSource).citation === 'string',
+        typeof (item as McpCitationSource).citation === 'string' &&
+        isHttpUrl((item as McpCitationSource).citation),
     )
   );
 }
@@ -107,16 +120,26 @@ function truncateSnippet(text: string, maxLength = 300): string {
   return `${cleaned.slice(0, maxLength).trimEnd()}...`;
 }
 
+function truncateContent(text: string, maxLength = MAX_MCP_CITATION_CONTENT_LENGTH): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength).trimEnd()}...`;
+}
+
 /** Rewrites a detected citation array into model-readable text (with copyable
- * anchors) plus the `ResultReference[]` the frontend citation renderer needs. */
+ * anchors) plus the `ResultReference[]` the frontend citation renderer needs.
+ * Caps the number of sources and the per-source content length so a
+ * misbehaving MCP server can't balloon prompt tokens/cost. */
 function buildMcpCitationContent(sources: McpCitationSource[]): {
   text: string;
   references: ResultReference[];
 } {
   const references: ResultReference[] = [];
   const lines: string[] = [];
+  const cappedSources = sources.slice(0, MAX_MCP_CITATION_SOURCES);
 
-  sources.forEach((source, index) => {
+  cappedSources.forEach((source, index) => {
     const title = deriveTitleFromUrl(source.citation);
     references.push({
       link: source.citation,
@@ -126,7 +149,7 @@ function buildMcpCitationContent(sources: McpCitationSource[]): {
       snippet: truncateSnippet(source.content),
     });
     lines.push(
-      `Source [${index}]: ${title} (${source.citation})\n${source.content}\nAnchor: \\ue202turn0ref${index}`,
+      `Source [${index}]: ${title} (${source.citation})\n${truncateContent(source.content)}\nAnchor: \\ue202turn0ref${index}`,
     );
   });
 
