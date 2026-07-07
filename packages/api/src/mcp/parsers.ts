@@ -81,8 +81,9 @@ function isMcpCitationArray(value: unknown): value is McpCitationSource[] {
         typeof item === 'object' &&
         item !== null &&
         typeof (item as McpCitationSource).content === 'string' &&
+        (item as McpCitationSource).content.length > 0 &&
         typeof (item as McpCitationSource).citation === 'string' &&
-        isHttpUrl((item as McpCitationSource).citation),
+        (item as McpCitationSource).citation.length > 0,
     )
   );
 }
@@ -140,16 +141,20 @@ function buildMcpCitationContent(sources: McpCitationSource[]): {
   const cappedSources = sources.slice(0, MAX_MCP_CITATION_SOURCES);
 
   cappedSources.forEach((source, index) => {
-    const title = deriveTitleFromUrl(source.citation);
+    const isUrl = isHttpUrl(source.citation);
+    const title = isUrl ? deriveTitleFromUrl(source.citation) : source.citation;
     references.push({
-      link: source.citation,
-      type: 'link',
+      link: isUrl ? source.citation : '',
+      type: isUrl ? 'link' : 'file',
       title,
       attribution: title,
       snippet: truncateSnippet(source.content),
     });
+    const sourceLine = isUrl
+      ? `Source [${index}]: ${title} (${source.citation})`
+      : `Source [${index}]: ${title}`;
     lines.push(
-      `Source [${index}]: ${title} (${source.citation})\n${truncateContent(source.content)}\nAnchor: \\ue202turn0ref${index}`,
+      `${sourceLine}\n${truncateContent(source.content)}\nAnchor: \\ue202turn0ref${index}`,
     );
   });
 

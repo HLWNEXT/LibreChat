@@ -614,7 +614,7 @@ describe('formatToolContent', () => {
       expect(content).toBe(JSON.stringify([citationSource, { id: 1, name: 'not a citation' }]));
     });
 
-    it('rejects a citation array whose citation uses a non-http(s) URL scheme', () => {
+    it('neutralizes a non-http(s) citation instead of rejecting the whole array', () => {
       const javascriptSource = {
         content: 'Malicious content',
         citation: 'javascript:alert(1)',
@@ -630,15 +630,75 @@ describe('formatToolContent', () => {
         content: [{ type: 'text', text: JSON.stringify([javascriptSource]) }],
       };
       const [jsContent, jsArtifacts] = formatToolContent(jsResult, 'openai');
-      expect(jsArtifacts).toBeUndefined();
-      expect(jsContent).toBe(JSON.stringify([javascriptSource]));
-      expect(jsContent).not.toContain('\\ue202turn0ref0');
+      expect(jsArtifacts).toBeDefined();
+      const jsReferences = jsArtifacts?.[Tools.mcp_search]?.references;
+      expect(jsReferences).toHaveLength(1);
+      expect(jsReferences?.[0].link).toBe('');
+      expect(jsReferences?.[0].link).not.toContain('javascript:');
+      expect(jsContent).toContain('\\ue202turn0ref0');
 
       const dataResult: t.MCPToolCallResponse = {
         content: [{ type: 'text', text: JSON.stringify([dataUriSource]) }],
       };
       const [, dataArtifacts] = formatToolContent(dataResult, 'openai');
-      expect(dataArtifacts).toBeUndefined();
+      const dataReferences = dataArtifacts?.[Tools.mcp_search]?.references;
+      expect(dataReferences).toHaveLength(1);
+      expect(dataReferences?.[0].link).toBe('');
+      expect(dataReferences?.[0].link).not.toContain('data:text/html');
+    });
+
+    it('accepts a citation array of bare filenames (real-world PDF-backed source shape)', () => {
+      const fileSources = [
+        {
+          content: '2026 HLW HOLIDAYS \n \n\nU.S. HOLIDAYS...',
+          citation: '2026 HLW Holiday Calendars.pdf',
+          score: 26.059875,
+        },
+        {
+          content: 'Employee handbook contents.',
+          citation: 'HLW-US-Employee-Handbook-Aug2025.pdf',
+          score: 8.493703,
+        },
+      ];
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify(fileSources) }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(artifacts).toBeDefined();
+      const references = artifacts?.[Tools.mcp_search]?.references;
+      expect(references).toHaveLength(2);
+      expect(references?.[0].link).toBe('');
+      expect(references?.[0].title).toBe('2026 HLW Holiday Calendars.pdf');
+      expect(content).toContain('Anchor: \\ue202turn0ref0');
+      expect(content).toContain('Anchor: \\ue202turn0ref1');
+    });
+
+    it('handles a mixed array of URL and bare-filename citations without poisoning the whole batch', () => {
+      const urlSource = {
+        content: 'Worksets content.',
+        citation: 'https://hlw.atlassian.net/wiki/spaces/PD/pages/2107408385/Worksets',
+        score: 12.15,
+      };
+      const fileSource = {
+        content: 'Holiday calendar content.',
+        citation: '2026 HLW Holiday Calendars.pdf',
+        score: 26.06,
+      };
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([urlSource, fileSource]) }],
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai');
+
+      const references = artifacts?.[Tools.mcp_search]?.references;
+      expect(references).toHaveLength(2);
+      expect(references?.[0].link).toBe(urlSource.citation);
+      expect(references?.[0].type).toBe('link');
+      expect(references?.[1].link).toBe('');
+      expect(references?.[1].type).toBe('file');
+      expect(references?.[1].title).toBe('2026 HLW Holiday Calendars.pdf');
     });
 
     it('caps the number of sources and truncates long per-source content', () => {
