@@ -39,6 +39,7 @@ export type ResultReference = {
   type: 'link' | 'image' | 'video' | 'file';
   title?: string;
   attribution?: string;
+  snippet?: string;
 };
 export interface SearchResultData {
   turn?: number;
