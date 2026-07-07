@@ -25,6 +25,24 @@ paths) each return an array shaped like:
 (`citation` may also be an Azure Blob PDF link.) The goal is for these to
 render as native-looking inline citations, not raw JSON.
 
+> **Update (found during manual verification, 2026-07-07):** `citation` is
+> **not always a URL**. The real `hr-search` server (PDF-backed) returns a
+> bare filename for every source, e.g. `"citation":
+> "2026 HLW Holiday Calendars.pdf"`. An earlier hardening pass rejected the
+> entire array if any source's `citation` wasn't `http(s)`, which meant
+> `hr-search`'s citations (100% filenames) always fell through to raw JSON
+> passthrough — the exact bug this feature was built to fix. The
+> implementation now branches **per source**: a real `http(s)` URL renders
+> as a normal clickable link; anything else (bare filename, or a malicious
+> `javascript:`/`data:` string) is neutralized — the raw string is only
+> ever used as a length-capped display `title`, never as `link` — and gets
+> a synthetic inert link (`#mcp-source-{index}`) instead of an empty
+> string (an empty `href` reloads the current page on click in most
+> browsers). See `packages/api/src/mcp/parsers.ts`'s `isHttpUrl`/
+> `buildMcpCitationContent` for the current logic — the "Changes" section
+> below describes the original (now partially superseded) design; treat
+> this note as the source of truth for the `citation`-is-a-URL assumption.
+
 ## Root cause (see prior investigation)
 
 Two things must both be true for a citation to render:
@@ -131,3 +149,9 @@ via bracket access in `Context.tsx`, but missing from the formal type).
   final cross-task review (2026-07-07); not fixed in this pass.
 - Per-server citation field mapping config in `librechat.yaml`.
 - Non-array / differently-shaped MCP citation formats.
+- A source with an empty-string `content` or `citation` still causes the
+  *entire* array to be rejected (structural shape check in
+  `isMcpCitationArray` is still all-or-nothing) — narrower than the
+  URL-scheme case fixed above, but the same class of "one bad source
+  poisons the batch" issue. Not observed in real MCP server data so far;
+  flagged during code review (2026-07-07), not fixed in this pass.

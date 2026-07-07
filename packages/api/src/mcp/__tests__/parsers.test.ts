@@ -633,7 +633,7 @@ describe('formatToolContent', () => {
       expect(jsArtifacts).toBeDefined();
       const jsReferences = jsArtifacts?.[Tools.mcp_search]?.references;
       expect(jsReferences).toHaveLength(1);
-      expect(jsReferences?.[0].link).toBe('');
+      expect(jsReferences?.[0].link).not.toBe('');
       expect(jsReferences?.[0].link).not.toContain('javascript:');
       expect(jsContent).toContain('\\ue202turn0ref0');
 
@@ -643,7 +643,7 @@ describe('formatToolContent', () => {
       const [, dataArtifacts] = formatToolContent(dataResult, 'openai');
       const dataReferences = dataArtifacts?.[Tools.mcp_search]?.references;
       expect(dataReferences).toHaveLength(1);
-      expect(dataReferences?.[0].link).toBe('');
+      expect(dataReferences?.[0].link).not.toBe('');
       expect(dataReferences?.[0].link).not.toContain('data:text/html');
     });
 
@@ -669,7 +669,8 @@ describe('formatToolContent', () => {
       expect(artifacts).toBeDefined();
       const references = artifacts?.[Tools.mcp_search]?.references;
       expect(references).toHaveLength(2);
-      expect(references?.[0].link).toBe('');
+      expect(references?.[0].link).not.toBe('');
+      expect(references?.[0].type).toBe('link');
       expect(references?.[0].title).toBe('2026 HLW Holiday Calendars.pdf');
       expect(content).toContain('Anchor: \\ue202turn0ref0');
       expect(content).toContain('Anchor: \\ue202turn0ref1');
@@ -696,9 +697,28 @@ describe('formatToolContent', () => {
       expect(references).toHaveLength(2);
       expect(references?.[0].link).toBe(urlSource.citation);
       expect(references?.[0].type).toBe('link');
-      expect(references?.[1].link).toBe('');
-      expect(references?.[1].type).toBe('file');
+      expect(references?.[1].link).not.toBe('');
+      expect(references?.[1].link).not.toBe(urlSource.citation);
+      expect(references?.[1].type).toBe('link');
       expect(references?.[1].title).toBe('2026 HLW Holiday Calendars.pdf');
+    });
+
+    it('caps the title length for a non-URL citation instead of using it verbatim', () => {
+      const longFilenameSource = {
+        content: 'Some content.',
+        citation: `${'a'.repeat(500)}.pdf`,
+        score: 1,
+      };
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([longFilenameSource]) }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      const references = artifacts?.[Tools.mcp_search]?.references;
+      expect(references?.[0].title?.length).toBeLessThanOrEqual(203);
+      expect(references?.[0].attribution?.length).toBeLessThanOrEqual(203);
+      expect(content.length).toBeLessThan(longFilenameSource.citation.length + 1000);
     });
 
     it('caps the number of sources and truncates long per-source content', () => {

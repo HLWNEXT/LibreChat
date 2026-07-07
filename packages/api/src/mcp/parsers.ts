@@ -128,10 +128,12 @@ function truncateContent(text: string, maxLength = MAX_MCP_CITATION_CONTENT_LENG
   return `${text.slice(0, maxLength).trimEnd()}...`;
 }
 
+const MAX_MCP_CITATION_TITLE_LENGTH = 200;
+
 /** Rewrites a detected citation array into model-readable text (with copyable
  * anchors) plus the `ResultReference[]` the frontend citation renderer needs.
- * Caps the number of sources and the per-source content length so a
- * misbehaving MCP server can't balloon prompt tokens/cost. */
+ * Caps the number of sources and the per-source content/title length so a
+ * misbehaving MCP server can't balloon prompt tokens/cost or the UI payload. */
 function buildMcpCitationContent(sources: McpCitationSource[]): {
   text: string;
   references: ResultReference[];
@@ -142,10 +144,18 @@ function buildMcpCitationContent(sources: McpCitationSource[]): {
 
   cappedSources.forEach((source, index) => {
     const isUrl = isHttpUrl(source.citation);
-    const title = isUrl ? deriveTitleFromUrl(source.citation) : source.citation;
+    const title = isUrl
+      ? deriveTitleFromUrl(source.citation)
+      : truncateSnippet(source.citation, MAX_MCP_CITATION_TITLE_LENGTH);
     references.push({
-      link: isUrl ? source.citation : '',
-      type: isUrl ? 'link' : 'file',
+      // Non-URL citations (e.g. a bare document filename) get a synthetic,
+      // inert link rather than an empty string: `href=""` reloads the
+      // current page on click in most browsers, which is a jarring
+      // mid-conversation surprise. `type: 'link'` (not 'file') avoids the
+      // Sources side panel treating this as a downloadable agent file with
+      // a fake fileId, which would silently fail to download.
+      link: isUrl ? source.citation : `#mcp-source-${index}`,
+      type: 'link',
       title,
       attribution: title,
       snippet: truncateSnippet(source.content),
