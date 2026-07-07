@@ -1,3 +1,4 @@
+import { Tools } from 'librechat-data-provider';
 import { formatToolContent } from '../parsers';
 import type * as t from '../types';
 
@@ -501,6 +502,83 @@ describe('formatToolContent', () => {
 
       const [content, artifacts] = formatToolContent(result, 'google');
       expect(content).toBe('Response with metadata');
+      expect(artifacts).toBeUndefined();
+    });
+  });
+
+  describe('MCP citation detection', () => {
+    const citationSource = {
+      content: 'This page identifies HLW&rsquo;s approach and standards related to using worksets.',
+      citation: 'https://hlw.atlassian.net/wiki/spaces/PD/pages/2107408385/Worksets',
+      score: 12.154897,
+    };
+
+    it('extracts references and rewrites text when the tool result is a citation array', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([citationSource]) }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(content).toContain('Worksets');
+      expect(content).toContain(citationSource.citation);
+      expect(content).toContain('\\ue202turn0ref0');
+      expect(content).not.toContain('"score"');
+
+      expect(artifacts?.[Tools.mcp_search]?.turn).toBe(0);
+      const references = artifacts?.[Tools.mcp_search]?.references;
+      expect(references).toHaveLength(1);
+      expect(references?.[0]).toMatchObject({
+        link: citationSource.citation,
+        type: 'link',
+        attribution: citationSource.citation,
+      });
+      expect(references?.[0].snippet?.length).toBeLessThanOrEqual(303);
+      expect(references?.[0].snippet).not.toContain('&rsquo;');
+    });
+
+    it('assigns sequential indices for multiple sources in one call', () => {
+      const secondSource = {
+        content: 'Second source content.',
+        citation: 'https://hlw.atlassian.net/wiki/spaces/PD/pages/2159673345/Modelling',
+        score: 10.65,
+      };
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([citationSource, secondSource]) }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(content).toContain('\\ue202turn0ref0');
+      expect(content).toContain('\\ue202turn0ref1');
+      expect(artifacts?.[Tools.mcp_search]?.references).toHaveLength(2);
+    });
+
+    it('includes citation format instructions for the model', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([citationSource]) }],
+      };
+
+      const [content] = formatToolContent(result, 'openai');
+      expect(content.toLowerCase()).toContain('citation format');
+    });
+
+    it('does not treat plain text as citations', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: 'Just a normal response, not JSON.' }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+      expect(content).toBe('Just a normal response, not JSON.');
+      expect(artifacts).toBeUndefined();
+    });
+
+    it('does not treat an unrelated JSON array as citations', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([{ id: 1, name: 'not a citation' }]) }],
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai');
       expect(artifacts).toBeUndefined();
     });
   });

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { Tools } from 'librechat-data-provider';
-import type { UIResource } from 'librechat-data-provider';
+import type { UIResource, ResultReference } from 'librechat-data-provider';
 import type * as t from './types';
 
 export const DEFAULT_MCP_IMAGE_DATA_MAX_BYTES: number = 10 * 1024 * 1024;
@@ -53,6 +53,88 @@ function assertImageDataWithinLimit(item: t.ImageContent): void {
     `MCP image result exceeds maximum size of ${maxBytes} bytes: ${estimatedBytes} bytes`,
   );
 }
+
+interface McpCitationSource {
+  content: string;
+  citation: string;
+  score?: number;
+}
+
+function isMcpCitationArray(value: unknown): value is McpCitationSource[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (item) =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof (item as McpCitationSource).content === 'string' &&
+        typeof (item as McpCitationSource).citation === 'string',
+    )
+  );
+}
+
+const HTML_ENTITY_MAP: Record<string, string> = {
+  '&rsquo;': '’',
+  '&lsquo;': '‘',
+  '&rdquo;': '”',
+  '&ldquo;': '“',
+  '&ccedil;': 'ç',
+  '&amp;': '&',
+  '&nbsp;': ' ',
+};
+
+function decodeHtmlEntities(text: string): string {
+  return text.replace(/&[a-z]+;/gi, (match) => HTML_ENTITY_MAP[match.toLowerCase()] ?? match);
+}
+
+function deriveTitleFromUrl(url: string): string {
+  try {
+    const { pathname } = new URL(url);
+    const segments = pathname.split('/').filter(Boolean);
+    const last = segments[segments.length - 1] ?? url;
+    return decodeURIComponent(last).replace(/[-+]/g, ' ');
+  } catch {
+    return url;
+  }
+}
+
+function truncateSnippet(text: string, maxLength = 300): string {
+  const cleaned = decodeHtmlEntities(text).replace(/\s+/g, ' ').trim();
+  if (cleaned.length <= maxLength) {
+    return cleaned;
+  }
+  return `${cleaned.slice(0, maxLength).trimEnd()}...`;
+}
+
+/** Rewrites a detected citation array into model-readable text (with copyable
+ * anchors) plus the `ResultReference[]` the frontend citation renderer needs. */
+function buildMcpCitationContent(sources: McpCitationSource[]): {
+  text: string;
+  references: ResultReference[];
+} {
+  const references: ResultReference[] = [];
+  const lines: string[] = [];
+
+  sources.forEach((source, index) => {
+    const title = deriveTitleFromUrl(source.citation);
+    references.push({
+      link: source.citation,
+      type: 'link',
+      title,
+      attribution: source.citation,
+      snippet: truncateSnippet(source.content),
+    });
+    lines.push(
+      `Source [${index}]: ${title} (${source.citation})\n${source.content}\nAnchor: \\ue202turn0ref${index}`,
+    );
+  });
+
+  return { text: lines.join('\n\n'), references };
+}
+
+const MCP_CITATION_INSTRUCTIONS = `
+CITATION FORMAT: When you use information from a source above, cite it immediately after the relevant statement using its exact Anchor value (e.g. \\ue202turn0ref0). Output the escape sequence EXACTLY as shown — do not substitute other symbols. Cite multiple sources for one statement by concatenating anchors: \\ue202turn0ref0\\ue202turn0ref1.`;
 
 const RECOGNIZED_PROVIDERS = new Set([
   'google',
@@ -153,6 +235,7 @@ export function formatToolContent(
 
   const imageUrls: t.FormattedContent[] = [];
   const uiResources: UIResource[] = [];
+  const mcpReferences: ResultReference[] = [];
   let currentTextBlock = '';
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
@@ -163,6 +246,20 @@ export function formatToolContent(
     resource: (item: Extract<t.ToolContentPart, { type: 'resource' }>) => void;
   } = {
     text: (item) => {
+      const trimmed = item.text.trim();
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed: unknown = JSON.parse(trimmed);
+          if (isMcpCitationArray(parsed)) {
+            const { text, references } = buildMcpCitationContent(parsed);
+            currentTextBlock += (currentTextBlock ? '\n\n' : '') + text;
+            mcpReferences.push(...references);
+            return;
+          }
+        } catch {
+          // Not JSON (or not a citation array) — fall through to plain text.
+        }
+      }
       currentTextBlock += (currentTextBlock ? '\n\n' : '') + item.text;
     },
 
@@ -238,6 +335,10 @@ UI Resource Markers Available:
     currentTextBlock += uiInstructions;
   }
 
+  if (mcpReferences.length > 0) {
+    currentTextBlock += '\n' + MCP_CITATION_INSTRUCTIONS;
+  }
+
   let artifacts: t.Artifacts = undefined;
   if (imageUrls.length > 0) {
     artifacts = { content: imageUrls };
@@ -247,6 +348,13 @@ UI Resource Markers Available:
     artifacts = {
       ...artifacts,
       [Tools.ui_resources]: { data: uiResources },
+    };
+  }
+
+  if (mcpReferences.length > 0) {
+    artifacts = {
+      ...artifacts,
+      [Tools.mcp_search]: { turn: 0, references: mcpReferences },
     };
   }
 
