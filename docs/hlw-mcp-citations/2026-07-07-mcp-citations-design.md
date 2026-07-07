@@ -155,3 +155,14 @@ via bracket access in `Context.tsx`, but missing from the formal type).
   URL-scheme case fixed above, but the same class of "one bad source
   poisons the batch" issue. Not observed in real MCP server data so far;
   flagged during code review (2026-07-07), not fixed in this pass.
+- Clicking a neutralized non-URL citation (synthetic `#mcp-source-{index}`
+  link) still opens a blank new tab that reloads the conversation, because
+  the citation anchors in `SourceHovercard.tsx`/`Sources.tsx` always render
+  with `target="_blank"` regardless of whether the link is a real URL or a
+  synthetic placeholder. Non-destructive (no data loss, no navigation away
+  from the current tab) but not fully polished. A real fix requires a
+  frontend change — an explicit "is this a real link" signal threaded from
+  `parsers.ts` through `ResultReference` to `SourceHovercard.tsx`, so
+  synthetic references render as inert (no `<a target="_blank">` at all).
+  Flagged during fix-verification review (2026-07-07); deferred per user
+  decision to retest the main fix first.
