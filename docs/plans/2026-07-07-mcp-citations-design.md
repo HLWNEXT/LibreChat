@@ -1,0 +1,123 @@
+# Design: Inline Citations for MCP Tool Results
+
+## Problem
+
+LibreChat renders inline citations (the hovercard/superscript UI seen with
+`web_search` and `file_search`) only for those two built-in tools. Generic
+MCP tool results are never inspected for citation-like data: whatever JSON
+an MCP server returns is flattened to plain text (or pretty-printed JSON in
+the expandable tool-call panel), with no path into the citation renderer.
+
+The user's MCP servers (`hr-search`, `bim-search`, `bim-training-search`,
+`deltek-search`, all hosted on one Azure App Service via different URL
+paths) each return an array shaped like:
+
+```json
+[
+  {
+    "content": "<full page text...>",
+    "citation": "https://hlw.atlassian.net/wiki/spaces/.../Worksets",
+    "score": 12.15
+  }
+]
+```
+
+(`citation` may also be an Azure Blob PDF link.) The goal is for these to
+render as native-looking inline citations, not raw JSON.
+
+## Root cause (see prior investigation)
+
+Two things must both be true for a citation to render:
+
+1. The model's own reply text contains a marker like `turn0ref0`.
+   This marker syntax is only ever taught to the model via hardcoded
+   system-prompt fragments scoped to `web_search`
+   (`packages/api/src/tools/toolkits/web.ts`) and `file_search`
+   (`api/app/clients/tools/util/fileSearch.js`). No equivalent exists for
+   MCP tools.
+2. The tool call's result is converted into a `TAttachment` shaped as
+   `{ type: Tools.web_search | Tools.file_search, ... }` by
+   `createToolEndCallback` / `createResponsesToolEndCallback` in
+   `api/server/controllers/agents/callbacks.js`. Generic MCP artifacts
+   (`packages/api/src/mcp/parsers.ts` → `formatToolContent`) only ever
+   produce `{ content: imageUrls }` and/or `{ [Tools.ui_resources]: ... }`
+   — never a citation-shaped artifact.
+
+Frontend resolution (`client/src/hooks/Messages/useSearchResultsByTurn.ts`
+→ `client/src/components/Web/Context.tsx` → `Citation.tsx`) already
+supports a generic `references` array via `refType: 'ref'` or `'file'`
+(mapped to `SearchResultData.references: ResultReference[]`, each
+`{ link, title?, attribution?, snippet? }`). `file_search` already proves
+this path works without needing new frontend rendering — it repackages
+its own source list into `references` and lets the existing
+`Citation`/`CompositeCitation` components do the rendering. This design
+follows the same route for MCP.
+
+## Scope decisions (confirmed with user)
+
+- **Detection**: auto-detect by shape — any MCP tool result that parses
+  as a JSON array of objects with `content` + `citation` fields is treated
+  as citation data. No per-server config in `librechat.yaml`. Anything
+  that doesn't match this shape is unaffected.
+- **Turn numbering**: hardcoded `turn0`, mirroring `file_search`'s
+  existing precedent. Correct for one citation-bearing MCP tool call per
+  assistant response (the expected common case for this user's servers).
+  Calling two different citation-returning MCP tools in the same response
+  is a known limitation, deferred.
+- **Hover snippet**: truncate `content` to ~300 characters (HTML entities
+  like `&rsquo;` cleaned) for the hovercard preview. The full `content` is
+  preserved in the tool's text output for the model's own reasoning.
+
+## Changes
+
+### 1. `packages/api/src/mcp/parsers.ts` (`formatToolContent`)
+
+- Detect the citation shape in parsed JSON `text` content blocks.
+- Rewrite the model-visible text from raw JSON into a readable, numbered
+  list, each entry annotated with the anchor to copy:
+  ```
+  Source [0]: <derived title> (<url>)
+  <full content>
+  Anchor: turn0ref0
+  ```
+  This doubles as the fix for raw JSON showing in the expandable tool-call
+  panel — the panel renders whatever text this function returns.
+- Build a normalized artifact (new shape, see below) with one
+  `ResultReference` per source: `{ link: citation, title, snippet:
+  truncate(cleanEntities(content), 300), attribution: citation }`.
+
+### 2. Citation-format prompt instruction
+
+Add a short instruction (reusing `web_search`'s existing wording, scoped to
+`type=ref`) injected into tool context only when an MCP call actually
+produced citation data — so the model knows to emit `turn0ref{index}`.
+
+### 3. `api/server/controllers/agents/callbacks.js`
+
+New branch (parallel to the existing `file_search`/`web_search`/
+`ui_resources` branches) in both `createToolEndCallback` and
+`createResponsesToolEndCallback`: recognize the new normalized artifact
+and emit a `TAttachment` with a **new dedicated type** (not
+`Tools.web_search` — reusing that type would trigger the `WebSearch.tsx`
+"Searching the web..." UI treatment, which misrepresents an HR/BIM/Deltek
+search). Working name: `Tools.mcp_search`.
+
+### 4. `client/src/hooks/Messages/useSearchResultsByTurn.ts`
+
+Recognize the new attachment type and populate `searchResults['0'].references`
+the same way the existing `file_search` branch does. No changes needed to
+`Citation.tsx`, `Context.tsx`, or the markdown remark plugin — they already
+handle `refType: 'ref'` → `references` generically.
+
+### 5. `packages/data-provider/src/types/web.ts`
+
+Add `snippet?: string` to `ResultReference` (already accessed at runtime
+via bracket access in `Context.tsx`, but missing from the formal type).
+
+## Out of scope / deferred
+
+- Correctly handling multiple citation-bearing MCP tool calls in a single
+  assistant response (would require threading the agent framework's
+  per-tool-call turn counter through `formatToolContent`).
+- Per-server citation field mapping config in `librechat.yaml`.
+- Non-array / differently-shaped MCP citation formats.
