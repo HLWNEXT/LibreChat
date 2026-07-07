@@ -118,6 +118,16 @@ via bracket access in `Context.tsx`, but missing from the formal type).
 
 - Correctly handling multiple citation-bearing MCP tool calls in a single
   assistant response (would require threading the agent framework's
-  per-tool-call turn counter through `formatToolContent`).
+  per-tool-call turn counter through `formatToolContent`). This
+  limitation is broader than just MCP-vs-MCP: `web_search`'s own turn
+  defaults to `0` for the first call in a response
+  (`api/server/services/Tools/search.js:53`,
+  `runnableConfig.toolCall?.turn ?? 0`), and `useSearchResultsByTurn.ts`
+  keys both `web_search` and `mcp_search` attachments into the same
+  `turnMap['0']`. So an assistant response that calls both a real web
+  search and a citation-bearing MCP tool can also collide — whichever
+  attachment is processed second silently overwrites the first in the
+  turn-keyed map, and that tool's citations fail to render. Found during
+  final cross-task review (2026-07-07); not fixed in this pass.
 - Per-server citation field mapping config in `librechat.yaml`.
 - Non-array / differently-shaped MCP citation formats.
