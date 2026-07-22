@@ -27,6 +27,12 @@ mcpServers:
     headers:
       Authorization: "Bearer ${MCP_SECRET_TOKEN}"
 
+  rfp-search:
+    type: streamable-http
+    url: "${MCP_BASE_URL}/mcp/rfp"
+    headers:
+      Authorization: "Bearer ${MCP_SECRET_TOKEN}"
+
 interface:
   customWelcome: "Hey {{user.name}}, Norm here. What are we solving today?"
 
