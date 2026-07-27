@@ -647,6 +647,45 @@ describe('formatToolContent', () => {
       expect(dataReferences?.[0].link).not.toContain('data:text/html');
     });
 
+    it('uses an explicit title for display and the file:// UNC path as the real link', () => {
+      const uncSource = {
+        content: 'Proposal body text.',
+        citation: 'file://hlw.com/global/Marketing/03-Prospects/2026/HLW%20Proposal.pdf#page=1',
+        title: 'HLW Proposal.pdf',
+        score: 54.27,
+      };
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([uncSource]) }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      const references = artifacts?.[Tools.mcp_search]?.references;
+      expect(references).toHaveLength(1);
+      expect(references?.[0].link).toBe(uncSource.citation);
+      expect(references?.[0].title).toBe('HLW Proposal.pdf');
+      expect(content).toContain(`Source [0]: HLW Proposal.pdf (${uncSource.citation})`);
+    });
+
+    it('still neutralizes an unsafe-scheme citation even when an explicit title is present', () => {
+      const maliciousSource = {
+        content: 'Malicious content',
+        citation: 'javascript:alert(1)',
+        title: 'Looks legit',
+        score: 1,
+      };
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([maliciousSource]) }],
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai');
+
+      const references = artifacts?.[Tools.mcp_search]?.references;
+      expect(references).toHaveLength(1);
+      expect(references?.[0].link).not.toContain('javascript:');
+      expect(references?.[0].title).toBe('Looks legit');
+    });
+
     it('accepts a citation array of bare filenames (real-world PDF-backed source shape)', () => {
       const fileSources = [
         {

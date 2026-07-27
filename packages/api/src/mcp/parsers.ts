@@ -57,6 +57,8 @@ function assertImageDataWithinLimit(item: t.ImageContent): void {
 interface McpCitationSource {
   content: string;
   citation: string;
+  /** Optional human-readable label. When present, it's shown instead of deriving a title from `citation`. */
+  title?: string;
   score?: number;
 }
 
@@ -67,6 +69,21 @@ function isHttpUrl(value: string): boolean {
   try {
     const { protocol } = new URL(value);
     return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/** Schemes allowed as a real clickable `href`. `file:` is included for internal
+ * network-share citations (e.g. `file://server/share/doc.pdf`) — whether it's
+ * actually navigable depends on the viewer's browser/OS policy, but it's safe
+ * to emit. Anything else (e.g. `javascript:`, `data:`) is neutralized. */
+const SAFE_CITATION_LINK_PROTOCOLS = new Set(['http:', 'https:', 'file:']);
+
+function isSafeCitationLink(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return SAFE_CITATION_LINK_PROTOCOLS.has(protocol);
   } catch {
     return false;
   }
@@ -83,7 +100,10 @@ function isMcpCitationArray(value: unknown): value is McpCitationSource[] {
         typeof (item as McpCitationSource).content === 'string' &&
         (item as McpCitationSource).content.length > 0 &&
         typeof (item as McpCitationSource).citation === 'string' &&
-        (item as McpCitationSource).citation.length > 0,
+        (item as McpCitationSource).citation.length > 0 &&
+        ((item as McpCitationSource).title === undefined ||
+          (typeof (item as McpCitationSource).title === 'string' &&
+            ((item as McpCitationSource).title as string).length > 0)),
     )
   );
 }
@@ -143,24 +163,29 @@ function buildMcpCitationContent(sources: McpCitationSource[]): {
   const cappedSources = sources.slice(0, MAX_MCP_CITATION_SOURCES);
 
   cappedSources.forEach((source, index) => {
+    const hasExplicitTitle = typeof source.title === 'string' && source.title.length > 0;
     const isUrl = isHttpUrl(source.citation);
-    const title = isUrl
-      ? deriveTitleFromUrl(source.citation)
-      : truncateSnippet(source.citation, MAX_MCP_CITATION_TITLE_LENGTH);
+    const isSafeLink = isSafeCitationLink(source.citation);
+    const title = hasExplicitTitle
+      ? truncateSnippet(source.title as string, MAX_MCP_CITATION_TITLE_LENGTH)
+      : isUrl
+        ? deriveTitleFromUrl(source.citation)
+        : truncateSnippet(source.citation, MAX_MCP_CITATION_TITLE_LENGTH);
     references.push({
-      // Non-URL citations (e.g. a bare document filename) get a synthetic,
-      // inert link rather than an empty string: `href=""` reloads the
-      // current page on click in most browsers, which is a jarring
-      // mid-conversation surprise. `type: 'link'` (not 'file') avoids the
-      // Sources side panel treating this as a downloadable agent file with
-      // a fake fileId, which would silently fail to download.
-      link: isUrl ? source.citation : `#mcp-source-${index}`,
+      // Citations on an unsafe/unrecognized scheme (e.g. bare filename,
+      // `javascript:`) get a synthetic, inert link rather than an empty
+      // string: `href=""` reloads the current page on click in most
+      // browsers, which is a jarring mid-conversation surprise. `type:
+      // 'link'` (not 'file') avoids the Sources side panel treating this as
+      // a downloadable agent file with a fake fileId, which would silently
+      // fail to download.
+      link: isSafeLink ? source.citation : `#mcp-source-${index}`,
       type: 'link',
       title,
       attribution: title,
       snippet: truncateSnippet(source.content),
     });
-    const sourceLine = isUrl
+    const sourceLine = isSafeLink
       ? `Source [${index}]: ${title} (${source.citation})`
       : `Source [${index}]: ${title}`;
     lines.push(
