@@ -36,6 +36,16 @@ mcpServers:
 interface:
   customWelcome: "Hey {{user.name}}, Norm here. What are we solving today?"
 
+memory:
+  personalize: true
+  agent:
+    enabled: true
+    provider: "azureOpenAI"
+    model: "gpt-5.2-chat"
+    instructions: "You are a memory management assistant. Store and manage user information accurately, capturing durable facts, preferences, and context worth remembering across conversations."
+    model_parameters:
+      temperature: 0.1
+
 endpoints:
   azureOpenAI:
     groups:
@@ -46,3 +56,6 @@ endpoints:
         models:
           gpt-5.2-chat:
             deploymentName: "gpt-5.2-chat"
+          gpt-5.6-luna:
+            deploymentName: "gpt-5.6-luna"
+
