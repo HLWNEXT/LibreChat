@@ -1,7 +1,22 @@
 import { visit } from 'unist-util-visit';
 import type { Node } from 'unist';
 import type { Citation, CitationNode } from './types';
-import { SPAN_REGEX, STANDALONE_PATTERN, CLEANUP_REGEX, COMPOSITE_REGEX } from '~/utils/citations';
+import {
+  SPAN_REGEX,
+  CLEANUP_REGEX,
+  COMPOSITE_REGEX,
+  STANDALONE_PATTERN,
+  INVALID_CITATION_REGEX,
+} from '~/utils/citations';
+
+/**
+ * Strips both marked citation characters and bare, unmarked anchor tokens
+ * (e.g. a model-emitted "turn0ref0" missing its marker character entirely — see
+ * INVALID_CITATION_REGEX) so neither leaks through as literal text.
+ */
+function cleanupText(text: string): string {
+  return text.replace(INVALID_CITATION_REGEX, '').replace(CLEANUP_REGEX, '');
+}
 
 /**
  * Checks if a standalone marker is truly standalone (not inside a composite block).
@@ -114,7 +129,7 @@ function processTree(tree: Node) {
 
       if (!nextMatchInfo) {
         // No more matches, add remaining content with cleanup
-        const remainingText = originalValue.substring(currentPosition).replace(CLEANUP_REGEX, '');
+        const remainingText = cleanupText(originalValue.substring(currentPosition));
         if (remainingText) {
           segments.push({ type: 'text', value: remainingText });
         }
@@ -127,9 +142,7 @@ function processTree(tree: Node) {
 
       // Add cleaned text before this match
       if (matchIndex > currentPosition) {
-        const textBeforeMatch = originalValue
-          .substring(currentPosition, matchIndex)
-          .replace(CLEANUP_REGEX, '');
+        const textBeforeMatch = cleanupText(originalValue.substring(currentPosition, matchIndex));
 
         if (textBeforeMatch) {
           segments.push({ type: 'text', value: textBeforeMatch });
@@ -248,9 +261,9 @@ function processTree(tree: Node) {
     if (segments.length > 0 && index !== undefined) {
       parentNode.children?.splice(index, 1, ...segments);
       return index + segments.length;
-    } else if (textNode.value !== textNode.value.replace(CLEANUP_REGEX, '')) {
+    } else if (textNode.value !== cleanupText(textNode.value)) {
       // If we didn't create segments but there are markers to clean up
-      textNode.value = textNode.value.replace(CLEANUP_REGEX, '');
+      textNode.value = cleanupText(textNode.value);
     }
   });
 }

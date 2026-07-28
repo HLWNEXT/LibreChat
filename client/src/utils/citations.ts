@@ -41,6 +41,16 @@ export const STANDALONE_PATTERN =
 export const CLEANUP_REGEX =
   /\\ue200|\\ue201|\\ue202|\\ue203|\\ue204|\\ue206|\ue200|\ue201|\ue202|\ue203|\ue204|\ue206/g;
 
-/** Matches invalid/orphaned citations (with leading whitespace) for removal */
+/**
+ * Matches invalid/orphaned citations (with leading whitespace) for removal.
+ * The \ue202 marker is optional here (unlike STANDALONE_PATTERN, which
+ * requires it): models sometimes emit the bare "turn0ref0" anchor shape
+ * without the marker character, most often when the citation-format
+ * instructions weren't part of their context (e.g. citing MCP/file_search
+ * results rather than web_search). The literal "turn{N}{type}{index}" shape
+ * is distinctive enough that it's safe to treat as a citation anchor either
+ * way, so unmarked anchors get cleaned up here instead of leaking through
+ * as literal text.
+ */
 export const INVALID_CITATION_REGEX =
-  /\s*(?:\\ue202|\ue202)turn\d+(search|news|image|video|ref|file)\d+/g;
+  /\s*(?:\\ue202|\ue202)?turn\d+(search|news|image|video|ref|file)\d+/g;
