@@ -33,6 +33,12 @@ mcpServers:
     headers:
       Authorization: "Bearer ${MCP_SECRET_TOKEN}"
 
+  elastic-agent-builder:
+    type: streamable-http
+    url: "${KIBANA_URL}api/agent_builder/mcp"
+    headers:
+      Authorization: "ApiKey ${ELASTIC_AGENT_BUILDER_API_KEY}"
+
 interface:
   customWelcome: "Hey {{user.name}}, Norm here. What are we solving today?"
 
