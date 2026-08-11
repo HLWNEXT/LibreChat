@@ -311,20 +311,23 @@ Because target execution nodes require fully encapsulated, serverless runtimes i
 1. **Compile Production Snapshot:** Run Docker locally to trigger LibreChat's native internal optimized multi-stage build scripts. This packages dependencies and strips away unneeded development components:
 
    ```bash
-   docker build -t hlwregistry.azurecr.io/librechat-custom:latest .
+   docker build -t hlwlibrechatacr.azurecr.io/librechat:latest .
    ```
 
 2. **Upload Image to Cloud Registry:** Log into the environment and push the finished container image straight up to your private Azure Container Registry:
 
    ```bash
    az login
-   az acr login --name hlwregistry
-   docker push hlwregistry.azurecr.io/librechat-custom:latest
+   az acr login --name hlwlibrechatacr
+   docker push hlwlibrechatacr.azurecr.io/librechat:latest
    ```
 
-3. **Deploy Infrastructure Upgrades:** Tell Azure Container Apps to pull down the newly published snapshot tag from the registry, prompting a rolling, zero-downtime execution update:
+3. **Deploy Infrastructure Upgrades:** Tell Azure Container Apps to pull down the newly published snapshot tag from the registry, prompting a rolling, zero-downtime execution update. Prefer pinning to the exact digest reported by the `docker push` above (matches how the app is already pinned) rather than the mutable `:latest` tag:
    ```bash
-   az containerapp update      --name hlw-librechat-app      --resource-group hlw-core-rg      --image hlwregistry.azurecr.io/librechat-custom:latest
+   az containerapp update \
+     --name librechat \
+     --resource-group HLW_aiChatbot \
+     --image hlwlibrechatacr.azurecr.io/librechat@sha256:<digest-from-push>
    ```
 
 > 🔐 **Enterprise Security & Secrets Guardrail:**
