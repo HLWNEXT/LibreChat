@@ -39,6 +39,13 @@ mcpServers:
     headers:
       Authorization: "ApiKey ${ELASTIC_AGENT_BUILDER_API_KEY}"
 
+  ai-image-engine:
+    type: streamable-http
+    url: "http://52.191.27.240:8189/mcp"
+    headers:
+      Authorization: "Bearer ${COMFYMCP_SECRET_TOKEN}"
+      X-User-Email: "{{LIBRECHAT_USER_EMAIL}}"
+
 interface:
   customWelcome: "Hey {{user.name}}, Norm here. What are we solving today?"
 
