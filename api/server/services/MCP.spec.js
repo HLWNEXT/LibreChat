@@ -1185,6 +1185,116 @@ describe('User parameter passing tests', () => {
       );
     });
 
+    it('should inject image_url into toolArguments for ai-image-engine when current-turn image attachments exist', async () => {
+      const mockUser = { id: 'image-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({
+        callTool: mockCallTool,
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `generate${D}ai-image-engine`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`generate${D}ai-image-engine`]: {
+            function: {
+              description: 'Generate an image',
+              parameters: { type: 'object', properties: { prompt: { type: 'string' } } },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          { prompt: 'draw a cat' },
+          {
+            configurable: {
+              user: mockUser,
+              currentImageAttachments: [{ type: 'image/png', filepath: '/uploads/abc.png' }],
+            },
+            metadata: { provider: 'openai' },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toBe('ok');
+
+      expect(mockCallTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'ai-image-engine',
+          toolArguments: { prompt: 'draw a cat', image_url: ['/uploads/abc.png'] },
+        }),
+      );
+    });
+
+    it('should NOT inject image_url for a non-ai-image-engine server, even with current-turn image attachments', async () => {
+      const mockUser = { id: 'other-server-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({
+        callTool: mockCallTool,
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `search${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`search${D}test-server`]: {
+            function: {
+              description: 'Search tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          {},
+          {
+            configurable: {
+              user: mockUser,
+              currentImageAttachments: [{ type: 'image/png', filepath: '/uploads/abc.png' }],
+            },
+            metadata: { provider: 'openai' },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toBe('ok');
+
+      expect(mockCallTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'test-server',
+          toolArguments: {},
+        }),
+      );
+    });
+
     it('should pass captured request body when invocation config omits requestBody', async () => {
       const mockUser = { id: 'captured-body-user', email: 'captured@example.com', role: 'USER' };
       const requestBody = { conversationId: 'conv-123', messageId: 'msg-123' };

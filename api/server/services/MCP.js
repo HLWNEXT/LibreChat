@@ -817,6 +817,15 @@ function createToolInstance({
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 
+      if (serverName === 'ai-image-engine' && toolArguments && typeof toolArguments === 'object') {
+        const imageAttachments = (config?.configurable?.currentImageAttachments ?? [])
+          .filter((file) => file?.type?.startsWith('image/') && file?.filepath)
+          .map((file) => file.filepath);
+        if (imageAttachments.length) {
+          toolArguments.image_url = imageAttachments;
+        }
+      }
+
       const result = await mcpManager.callTool({
         serverName,
         serverConfig: capturedServerConfig,
