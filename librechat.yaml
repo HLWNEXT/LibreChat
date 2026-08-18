@@ -41,10 +41,14 @@ mcpServers:
 
   ai-image-engine:
     type: streamable-http
-    url: "http://52.191.27.240:8189/mcp"
+    url: "http://172.16.5.125:8189/mcp"
     headers:
       Authorization: "Bearer ${COMFYMCP_SECRET_TOKEN}"
       X-User-Email: "{{LIBRECHAT_USER_EMAIL}}"
+
+mcpSettings:
+  allowedAddresses:
+    - '172.16.5.125:8189'
 
 interface:
   customWelcome: "Hey {{user.name}}, Norm here. What are we solving today?"
