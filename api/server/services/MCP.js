@@ -174,6 +174,30 @@ function getServerCustomUserVars(userMCPAuthMap, serverName) {
 }
 
 /**
+ * Pulls an Atlassian accountId out of a `lookupJiraAccountId` tool response.
+ * The response text is JSON (array of matches, or an object wrapping one), so this
+ * tries structured parsing first and falls back to a regex scan for resilience
+ * against minor shape differences.
+ */
+function extractJiraAccountId(rawContent) {
+  if (typeof rawContent !== 'string') {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(rawContent);
+    const list = Array.isArray(parsed) ? parsed : (parsed?.users ?? parsed?.results ?? [parsed]);
+    const first = Array.isArray(list) ? list[0] : list;
+    if (first?.accountId) {
+      return first.accountId;
+    }
+  } catch {
+    // fall through to regex fallback below
+  }
+  const match = rawContent.match(/"accountId"\s*:\s*"([^"]+)"/);
+  return match ? match[1] : null;
+}
+
+/**
  * Best-effort early gate; the authoritative check is
  * `assertResolvedRuntimeConfigAllowed` in `@librechat/api`, whose resolution
  * this must mirror. Graph placeholders resolve later (async), so a URL still
@@ -817,15 +841,10 @@ function createToolInstance({
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 
-      const result = await mcpManager.callTool({
+      const sharedCallToolParams = {
         serverName,
         serverConfig: capturedServerConfig,
-        toolName,
         provider,
-        toolArguments,
-        options: {
-          signal: derivedSignal,
-        },
         user: effectiveUser,
         requestBody: config?.configurable?.requestBody ?? capturedRequestBody,
         requestScopedConnections:
@@ -843,6 +862,49 @@ function createToolInstance({
         graphTokenResolver: getGraphApiToken,
         oboTokenResolver: exchangeOboToken,
         oboTrustChecker: createOboTrustChecker(),
+      };
+
+      if (
+        serverName === 'jira-ticket-submission' &&
+        toolName === 'createJiraIssue' &&
+        toolArguments &&
+        typeof toolArguments === 'object' &&
+        effectiveUser?.email &&
+        toolArguments.cloudId
+      ) {
+        try {
+          const [lookupResult] = await mcpManager.callTool({
+            ...sharedCallToolParams,
+            toolName: 'lookupJiraAccountId',
+            toolArguments: { cloudId: toolArguments.cloudId, searchString: effectiveUser.email },
+            options: { signal: derivedSignal },
+          });
+          const accountId = extractJiraAccountId(lookupResult);
+          if (accountId) {
+            toolArguments.additional_fields = {
+              ...(toolArguments.additional_fields ?? {}),
+              reporter: { id: accountId },
+            };
+          } else {
+            logger.warn(
+              `[MCP][${serverName}][${toolName}][User: ${userId}] Could not resolve Jira accountId for reporter auto-fill.`,
+            );
+          }
+        } catch (lookupError) {
+          logger.warn(
+            `[MCP][${serverName}][${toolName}][User: ${userId}] lookupJiraAccountId failed; reporter not auto-filled.`,
+            lookupError,
+          );
+        }
+      }
+
+      const result = await mcpManager.callTool({
+        ...sharedCallToolParams,
+        toolName,
+        toolArguments,
+        options: {
+          signal: derivedSignal,
+        },
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {

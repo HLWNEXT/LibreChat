@@ -44,7 +44,6 @@ mcpServers:
     url: "${ATLASSIAN_URL}/v1/mcp"
     headers:
       Authorization: "Bearer ${JIRA_SERVICE_ACCOUNT_TOKEN}"
-      X-User-Email: "{{LIBRECHAT_USER_EMAIL}}"
 
 interface:
   customWelcome: "Hey {{user.name}}, Norm here. What are we solving today?"
