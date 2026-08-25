@@ -77,6 +77,7 @@ jest.mock('~/models', () => ({
   updateToken: jest.fn(),
   deleteTokens: jest.fn(),
   getRoleByName: jest.fn(),
+  getLatestConversationAttachment: jest.fn(),
 }));
 
 jest.mock('./Tools/mcp', () => ({
@@ -1181,6 +1182,307 @@ describe('User parameter passing tests', () => {
           serverName: 'test-server',
           toolName: 'test-tool',
           user: mockUser,
+        }),
+      );
+    });
+
+    it('should inject image_url into toolArguments for ai-image-engine when current-turn image attachments exist', async () => {
+      const mockUser = { id: 'image-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({
+        callTool: mockCallTool,
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `generate_image_gemini_edit${D}ai-image-engine`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`generate_image_gemini_edit${D}ai-image-engine`]: {
+            function: {
+              description: 'Generate an image',
+              parameters: { type: 'object', properties: { prompt: { type: 'string' } } },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          { prompt: 'draw a cat' },
+          {
+            configurable: {
+              user: mockUser,
+              currentImageAttachments: [{ type: 'image/png', filepath: '/uploads/abc.png' }],
+            },
+            metadata: { provider: 'openai' },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toBe('ok');
+
+      expect(mockCallTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'ai-image-engine',
+          toolArguments: { prompt: 'draw a cat', image_url: '/uploads/abc.png' },
+        }),
+      );
+
+      const { getLatestConversationAttachment } = require('~/models');
+      expect(getLatestConversationAttachment).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the most recent conversation attachment when the current turn has no image', async () => {
+      const mockUser = { id: 'image-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName, getLatestConversationAttachment } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+      getLatestConversationAttachment.mockResolvedValue({
+        file_id: 'file-image-1',
+        type: 'image/png',
+        filepath: '/uploads/turn1.png',
+      });
+
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({
+        callTool: mockCallTool,
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `generate_image_gemini_edit${D}ai-image-engine`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`generate_image_gemini_edit${D}ai-image-engine`]: {
+            function: {
+              description: 'Generate an image',
+              parameters: { type: 'object', properties: { prompt: { type: 'string' } } },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          { prompt: 'color it' },
+          {
+            configurable: {
+              user: mockUser,
+            },
+            metadata: { provider: 'openai', thread_id: 'thread-abc' },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toBe('ok');
+
+      expect(getLatestConversationAttachment).toHaveBeenCalledWith(
+        'thread-abc',
+        'image-user',
+        'image/',
+        { excludeFileIds: expect.any(Set) },
+      );
+      expect(mockCallTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'ai-image-engine',
+          toolArguments: { prompt: 'color it', image_url: '/uploads/turn1.png' },
+        }),
+      );
+    });
+
+    it('assigns two current-turn images to content_image_url and style_image_url in upload order', async () => {
+      const mockUser = { id: 'image-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName, getLatestConversationAttachment } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({
+        callTool: mockCallTool,
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `generate_image_gemini_style_transfer${D}ai-image-engine`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`generate_image_gemini_style_transfer${D}ai-image-engine`]: {
+            function: {
+              description: 'Style transfer',
+              parameters: { type: 'object', properties: { prompt: { type: 'string' } } },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          {},
+          {
+            configurable: {
+              user: mockUser,
+              currentImageAttachments: [
+                { type: 'image/png', filepath: '/uploads/content.png' },
+                { type: 'image/png', filepath: '/uploads/style.png' },
+              ],
+            },
+            metadata: { provider: 'openai' },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toBe('ok');
+
+      expect(getLatestConversationAttachment).not.toHaveBeenCalled();
+      expect(mockCallTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'ai-image-engine',
+          toolArguments: {
+            content_image_url: '/uploads/content.png',
+            style_image_url: '/uploads/style.png',
+          },
+        }),
+      );
+    });
+
+    it('only injects image_url (not a content/style pair) for the flux style-transfer tool', async () => {
+      const mockUser = { id: 'image-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({
+        callTool: mockCallTool,
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `generate_image_flux_kontext_style_transfer${D}ai-image-engine`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`generate_image_flux_kontext_style_transfer${D}ai-image-engine`]: {
+            function: {
+              description: 'Local style transfer',
+              parameters: { type: 'object', properties: { prompt: { type: 'string' } } },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          { prompt: 'make it look like a watercolor' },
+          {
+            configurable: {
+              user: mockUser,
+              currentImageAttachments: [
+                { type: 'image/png', filepath: '/uploads/only.png' },
+                { type: 'image/png', filepath: '/uploads/ignored.png' },
+              ],
+            },
+            metadata: { provider: 'openai' },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toBe('ok');
+
+      expect(mockCallTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'ai-image-engine',
+          toolArguments: {
+            prompt: 'make it look like a watercolor',
+            image_url: '/uploads/only.png',
+          },
+        }),
+      );
+    });
+
+    it('should NOT inject image_url for a non-ai-image-engine server, even with current-turn image attachments', async () => {
+      const mockUser = { id: 'other-server-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({
+        callTool: mockCallTool,
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `search${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`search${D}test-server`]: {
+            function: {
+              description: 'Search tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          {},
+          {
+            configurable: {
+              user: mockUser,
+              currentImageAttachments: [{ type: 'image/png', filepath: '/uploads/abc.png' }],
+            },
+            metadata: { provider: 'openai' },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toBe('ok');
+
+      expect(mockCallTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'test-server',
+          toolArguments: {},
         }),
       );
     });

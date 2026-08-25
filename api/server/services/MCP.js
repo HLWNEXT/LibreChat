@@ -37,7 +37,7 @@ const {
   getMCPManager,
 } = require('~/config');
 const db = require('~/models');
-const { findToken, createToken, updateToken, deleteTokens } = db;
+const { findToken, createToken, updateToken, deleteTokens, getLatestConversationAttachment } = db;
 const { getGraphApiToken } = require('./GraphTokenService');
 const { exchangeOboToken } = require('./OboTokenService');
 const { createOboTrustChecker } = require('./OboPolicyService');
@@ -51,6 +51,39 @@ const RECONNECT_THROTTLE_MS = 10_000;
 
 const missingToolCache = new Map();
 const MISSING_TOOL_TTL_MS = 10_000;
+
+/** Specific tools (keyed by `${toolName}${Constants.mcp_delimiter}${serverName}`,
+ *  matching `normalizedToolKey` below) that get matching-type attachment
+ *  URL(s) auto-injected into toolArguments when the model didn't already
+ *  supply them. `args` lists the argument name(s) to fill, in the order
+ *  current-turn attachments of `typePrefix` were uploaded (e.g. for
+ *  style-transfer, the first image becomes content, the second becomes
+ *  style). Keyed per TOOL, not per server — `ai-image-engine` hosts both
+ *  single-image edit tools and generate_image_gemini_style_transfer's
+ *  two-image (content/style) shape, and generate_image_flux_kontext_style_transfer
+ *  deliberately takes only one image (its own tool description says so) —
+ *  a server-wide rule would get this wrong. Add an entry here to extend;
+ *  never inject unconditionally for every tool/server, since an
+ *  unrecognized argument can break a server whose schema disallows
+ *  additional properties. */
+const ATTACHMENT_INJECTION_CONFIG = {
+  [`generate_image_gemini_edit${Constants.mcp_delimiter}ai-image-engine`]: {
+    typePrefix: 'image/',
+    args: ['image_url'],
+  },
+  [`generate_image_flux_kontext_edit${Constants.mcp_delimiter}ai-image-engine`]: {
+    typePrefix: 'image/',
+    args: ['image_url'],
+  },
+  [`generate_image_flux_kontext_style_transfer${Constants.mcp_delimiter}ai-image-engine`]: {
+    typePrefix: 'image/',
+    args: ['image_url'],
+  },
+  [`generate_image_gemini_style_transfer${Constants.mcp_delimiter}ai-image-engine`]: {
+    typePrefix: 'image/',
+    args: ['content_image_url', 'style_image_url'],
+  },
+};
 
 async function userCanUseMCPServers(user, req) {
   if (!user?.id || !user?.role) {
@@ -816,6 +849,35 @@ function createToolInstance({
 
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+
+      const attachmentInjection = ATTACHMENT_INJECTION_CONFIG[normalizedToolKey];
+      if (attachmentInjection && toolArguments && typeof toolArguments === 'object') {
+        // Ordered by upload order within the current turn (e.g. for
+        // style-transfer: first image = content, second = style).
+        const currentTurnMatches = (config?.configurable?.currentImageAttachments ?? []).filter(
+          (file) => file?.type?.startsWith(attachmentInjection.typePrefix) && file?.filepath,
+        );
+        const conversationId = config?.metadata?.thread_id;
+        const usedFileIds = new Set();
+        for (let i = 0; i < attachmentInjection.args.length; i++) {
+          let attachment = currentTurnMatches[i];
+          if (!attachment && conversationId && userId) {
+            attachment = await getLatestConversationAttachment(
+              conversationId,
+              userId,
+              attachmentInjection.typePrefix,
+              { excludeFileIds: usedFileIds },
+            );
+          }
+          if (attachment?.filepath) {
+            // MCP tool schemas here declare these as single strings, not arrays.
+            toolArguments[attachmentInjection.args[i]] = attachment.filepath;
+            if (attachment.file_id) {
+              usedFileIds.add(attachment.file_id);
+            }
+          }
+        }
+      }
 
       const result = await mcpManager.callTool({
         serverName,

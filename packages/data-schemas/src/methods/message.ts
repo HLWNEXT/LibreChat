@@ -80,6 +80,12 @@ export interface MessageMethods {
     hydrate?: boolean,
   ): Promise<unknown>;
   deleteMessages(filter: FilterQuery<IMessage>): Promise<DeleteResult>;
+  getLatestConversationAttachment(
+    conversationId: string,
+    userId: string,
+    typePrefix: string,
+    options?: { excludeFileIds?: Set<string> },
+  ): Promise<{ file_id?: string; filepath: string; type: string; filename?: string } | null>;
 }
 
 export function createMessageMethods(mongoose: typeof import('mongoose')): MessageMethods {
@@ -374,6 +380,60 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     }
   }
 
+  /**
+   * Finds the most recent attachment of a given MIME-type prefix (e.g.
+   * `image/`) anywhere in a conversation, walking message history
+   * newest-first. Used as a fallback when the current turn has no
+   * attachment of its own, so e.g. an image uploaded in an earlier turn can
+   * still be resolved by MCP tools that need its URL. `excludeFileIds` skips
+   * already-assigned attachments, so a caller resolving multiple argument
+   * slots (e.g. style-transfer's content + style images) in sequence
+   * doesn't get the same file twice.
+   */
+  async function getLatestConversationAttachment(
+    conversationId: string,
+    userId: string,
+    typePrefix: string,
+    options?: { excludeFileIds?: Set<string> },
+  ): Promise<{ file_id?: string; filepath: string; type: string; filename?: string } | null> {
+    if (!conversationId || !userId || !typePrefix) {
+      return null;
+    }
+    try {
+      const messages = await getMessages(
+        { conversationId, user: userId },
+        'files attachments createdAt',
+        { sort: { createdAt: -1 }, limit: 100 },
+      );
+      for (const message of messages) {
+        const refs = [...(message.files ?? []), ...(message.attachments ?? [])] as Array<{
+          file_id?: string;
+          filename?: string;
+          filepath?: string;
+          type?: string;
+        }>;
+        for (const ref of refs) {
+          if (
+            ref?.type?.startsWith(typePrefix) &&
+            ref?.filepath &&
+            !(ref.file_id && options?.excludeFileIds?.has(ref.file_id))
+          ) {
+            return {
+              file_id: ref.file_id,
+              filepath: ref.filepath,
+              type: ref.type,
+              filename: ref.filename,
+            };
+          }
+        }
+      }
+      return null;
+    } catch (err) {
+      logger.error('[getLatestConversationAttachment] Error retrieving latest attachment:', err);
+      return null;
+    }
+  }
+
   async function getMessageTextStats(
     filter: FilterQuery<IMessage>,
     options: MessageTextStatsOptions = {},
@@ -547,6 +607,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     updateMessage,
     deleteMessagesSince,
     getMessages,
+    getLatestConversationAttachment,
     getMessageTextStats,
     getMessage,
     getMessagesByCursor,
