@@ -53,10 +53,16 @@ RUN \
 
 COPY --chown=node:node . .
 
+# --chown sets ownership but not mode bits; files copied from a Windows/OneDrive
+# build context can carry restrictive permissions that survive the copy, which
+# breaks `rimraf` during the frontend build (EACCES on rmdir). Normalize before
+# building so it doesn't depend on the host's file mode bits.
+RUN chmod -R u+rwX /app
+
 RUN \
     # React client build with configurable memory
-    NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend; \
-    npm prune --production; \
+    NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend && \
+    npm prune --production && \
     npm cache clean --force
 
 # Optional build metadata surfaced in Settings -> About for support triage.

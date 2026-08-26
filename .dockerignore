@@ -13,5 +13,11 @@ librechat*
 Dockerfile*
 docs
 
+# Built inside the image from source — excluding host-built output avoids
+# shipping stale/host-specific artifacts and sidesteps a race where a
+# background file sync (e.g. OneDrive) can corrupt the build-context
+# transfer if these are being written to on the host mid-build.
+**/dist
+
 # Ignore all hidden files
 .*

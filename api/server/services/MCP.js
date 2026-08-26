@@ -870,7 +870,8 @@ function createToolInstance({
         toolArguments &&
         typeof toolArguments === 'object' &&
         effectiveUser?.email &&
-        toolArguments.cloudId
+        toolArguments.cloudId &&
+        !toolArguments.additional_fields?.reporter
       ) {
         try {
           const [lookupResult] = await mcpManager.callTool({
