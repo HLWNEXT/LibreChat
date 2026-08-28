@@ -1371,7 +1371,7 @@ describe('User parameter passing tests', () => {
       );
     });
 
-    it('only injects image_url (not a content/style pair) for the flux style-transfer tool', async () => {
+    it('assigns two current-turn images to content_image_url and style_image_url for the flux style-transfer tool', async () => {
       const mockUser = { id: 'image-user', role: 'USER' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };
       const { getRoleByName } = require('~/models');
@@ -1411,8 +1411,8 @@ describe('User parameter passing tests', () => {
             configurable: {
               user: mockUser,
               currentImageAttachments: [
-                { type: 'image/png', filepath: '/uploads/only.png' },
-                { type: 'image/png', filepath: '/uploads/ignored.png' },
+                { type: 'image/png', filepath: '/uploads/content.png' },
+                { type: 'image/png', filepath: '/uploads/style.png' },
               ],
             },
             metadata: { provider: 'openai' },
@@ -1426,7 +1426,8 @@ describe('User parameter passing tests', () => {
           serverName: 'ai-image-engine',
           toolArguments: {
             prompt: 'make it look like a watercolor',
-            image_url: '/uploads/only.png',
+            content_image_url: '/uploads/content.png',
+            style_image_url: '/uploads/style.png',
           },
         }),
       );

@@ -59,11 +59,14 @@ const MISSING_TOOL_TTL_MS = 10_000;
  *  current-turn attachments of `typePrefix` were uploaded (e.g. for
  *  style-transfer, the first image becomes content, the second becomes
  *  style). Keyed per TOOL, not per server — `ai-image-engine` hosts both
- *  single-image edit tools and generate_image_gemini_style_transfer's
- *  two-image (content/style) shape, and generate_image_flux_kontext_style_transfer
- *  deliberately takes only one image (its own tool description says so) —
- *  a server-wide rule would get this wrong. Add an entry here to extend;
- *  never inject unconditionally for every tool/server, since an
+ *  single-image edit tools and the two style-transfer tools' two-image
+ *  (content/style) shape (confirmed against the live server's tools/list;
+ *  generate_image_flux_kontext_style_transfer used to be single-image but
+ *  was changed server-side to match generate_image_gemini_style_transfer —
+ *  re-verify against tools/list if this ever mismatches again).
+ *  generate_image_gemini (pure text-to-image, no image input) and
+ *  check_job (job_id only) intentionally have no entry. Add an entry here
+ *  to extend; never inject unconditionally for every tool/server, since an
  *  unrecognized argument can break a server whose schema disallows
  *  additional properties. */
 const ATTACHMENT_INJECTION_CONFIG = {
@@ -77,7 +80,7 @@ const ATTACHMENT_INJECTION_CONFIG = {
   },
   [`generate_image_flux_kontext_style_transfer${Constants.mcp_delimiter}ai-image-engine`]: {
     typePrefix: 'image/',
-    args: ['image_url'],
+    args: ['content_image_url', 'style_image_url'],
   },
   [`generate_image_gemini_style_transfer${Constants.mcp_delimiter}ai-image-engine`]: {
     typePrefix: 'image/',

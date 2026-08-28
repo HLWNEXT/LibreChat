@@ -81,8 +81,9 @@ calling the tool, and refuse if it couldn't — impossible, since the model
 never sees that value. Corrected the skill body (§1 "Image attachment
 handling") to say `image_url`/`image_base64` should be **omitted** for the
 two edit tools (auto-attached), while leaving the two style-transfer tools
-(`content_image_url`/`style_image_url` — not covered by the code injection)
-explicitly still requiring the user to provide both images.
+(`content_image_url`/`style_image_url` — not covered by the code injection
+*at the time*; §7 later added coverage for both) explicitly still requiring
+the user to provide both images.
 
 Also broadened the skill's `description` field with explicit trigger
 phrases ("color it," "recolor this," etc.) so the model reliably
@@ -111,10 +112,9 @@ local MongoDB container (which is stubbed out), and bind-mounts
 change; a plain `docker compose restart api` is enough for `librechat.yaml`
 or `.env` edits alone.
 
-## 6. Reuse an image uploaded in an earlier turn (uncommitted)
+## 6. Reuse an image uploaded in an earlier turn
 
-**Status: implemented and tested locally, deployed to the running
-container, not yet committed to git.**
+**Commit:** `1d1709b90` — `add two url`
 
 **Problem:** §2's injection only found images uploaded in the *same* turn
 as the tool call. Asking for an edit in a later turn, without re-attaching,
@@ -140,11 +140,13 @@ Investigated two rejected approaches before landing on this one:
 - `api/server/services/MCP.js` — replaced the single hardcoded
   `serverName === 'ai-image-engine'` check with a small
   `ATTACHMENT_INJECTION_CONFIG` allowlist (`{ argName, typePrefix }` per
-  server), so the mechanism is generic and extensible to other
-  servers/types without being blanket-applied to every MCP server (a
-  deliberate scope decision — see §2's rationale, same tradeoff applies
-  here). Falls back to the new DB lookup only when the current turn has no
-  matching-type attachment of its own — zero extra query otherwise.
+  server at the time — §7 later changed this to per-*tool*, `{ typePrefix,
+  args: [...] }`, when a single server-wide rule turned out to be wrong),
+  so the mechanism is generic and extensible to other servers/types
+  without being blanket-applied to every MCP server (a deliberate scope
+  decision — see §2's rationale, same tradeoff applies here). Falls back
+  to the new DB lookup only when the current turn has no matching-type
+  attachment of its own — zero extra query otherwise.
 
 **Tests:** `packages/data-schemas/src/methods/message.spec.ts` (4 new
 cases, real `mongodb-memory-server`) and `api/server/services/MCP.spec.js`
@@ -157,6 +159,58 @@ change (no code, `project_id` is ordinary chat text the model already
 sees), deferred by a transient Cosmos DB connectivity issue and not yet
 circled back to.
 
+## 7. Multi-image style-transfer support + the model's premature "no image" refusal (uncommitted)
+
+**Status: implemented and tested locally, deployed to the running
+container, not yet committed to git.**
+
+**Two separate bugs found from one user report** ("two-image style
+transfer can't get the URL", then "model says it can't see an image even
+after I said to look at a previous conversation"):
+
+1. **Schema drift on the MCP server.** Re-querying `tools/list` directly
+   found the server had changed: `generate_image_flux_kontext_style_transfer`
+   used to take a single `image_url` (its description explicitly said "does
+   NOT take a second reference-image argument") — it now takes
+   `content_image_url`/`style_image_url`, the same two-image shape as
+   `generate_image_gemini_style_transfer`. A new text-to-image-only tool,
+   `generate_image_gemini`, also appeared (no image input at all — no
+   injection entry needed). Fixed `ATTACHMENT_INJECTION_CONFIG`
+   (`api/server/services/MCP.js`) to key per-**tool**, not per-server, since
+   different tools on the same server can need different argument shapes —
+   both style-transfer tools now get `['content_image_url', 'style_image_url']`,
+   filled in upload order (first image = content, second = style, per an
+   explicit product decision — no other disambiguation signal is available,
+   since the model can't read filenames/URLs to decide itself). Also
+   extended `getLatestConversationAttachment` (`message.ts`) with an
+   `excludeFileIds` option, so resolving two argument slots from history
+   doesn't return the same image for both.
+
+2. **The model was refusing via text without ever calling the tool.** The
+   `generate-image` skill (heavily rewritten by the user since §4, up to
+   v38 — added NDA/project_id gating, tool selection by NDA status, and a
+   sub-skill pipelining step, all left untouched here) had two sections
+   telling the model to *itself* judge whether an image was available
+   before calling anything: one instructing it to "extract the `file_id` or
+   Base64 data" from history directly (impossible — established in §2 that
+   the model never sees that data), and a response-behavior rule telling it
+   to answer "no image" in text whenever *it* believed zero images existed
+   in history — which is unreliable, since the model can't see the full
+   attachment history. Enabling full debug logging (`DEBUG_CONSOLE=true` in
+   `.env`, gitignored/local-only — needed because `packages/data-schemas/src/config/winston.ts`
+   only routes `debug`-level logs to the console when this is set) and
+   tracing the raw MCP wire protocol confirmed: `initialize` → `tools/list`
+   only, zero `tools/call` ever sent, even after the user explicitly said
+   "try to find it from previous conversation." Corrected the two skill
+   sections (surgically — only those two, not the user's other additions)
+   to say the model should never pre-judge image availability and should
+   always attempt the tool call once project_id/NDA are known, only falling
+   back to "no image" if the tool call itself reports one missing.
+
+**Tests:** extended `MCP.spec.js` for the two-image flux case and the
+now-per-tool config lookup; `message.spec.ts` gained an `excludeFileIds`
+case. Full suites green (56 in `MCP.spec.js`, 51 in `message.spec.ts`).
+
 ## Status at a glance
 
 | Change | Location | State |
@@ -168,18 +222,23 @@ circled back to.
 | `generate-image` skill: trigger-phrase description | MongoDB `skills` collection | Live (DB, not git-tracked) |
 | Local Docker deployment config | `docker-compose.override.yml` | Gitignored, local-only, documented |
 | Deployment guide | `docs/general/Local-Docker-Deployment-Guide.md` | Committed (`8c22e31cb`) |
-| Cross-turn image fallback | `message.ts`, `MCP.js` + tests | **Uncommitted**, deployed to local container |
-| `generate-image` skill: ask for `project_id` | MongoDB `skills` collection | **Not started** |
+| Cross-turn image fallback | `message.ts`, `MCP.js` + tests | Committed (`1d1709b90`) |
+| `generate-image` skill: ask for `project_id` | MongoDB `skills` collection | Superseded — user's own v24–v38 rewrite added a full project_id/NDA gating flow (§7) |
+| Per-tool config (schema drift fix) + multi-image style-transfer | `MCP.js`, `message.ts` + tests | **Uncommitted**, deployed to local container |
+| `generate-image` skill: stop pre-judging image availability | MongoDB `skills` collection | Live (DB, not git-tracked) |
+| `DEBUG_CONSOLE=true` for live debug-log tracing | `.env` | Gitignored, local-only |
 
 ## Known gaps / deliberate non-goals
 
-- Style-transfer tools (`generate_image_gemini_style_transfer`,
-  `generate_image_flux_kontext_style_transfer`) are not covered by the
-  auto-injection — they take `content_image_url`/`style_image_url`, a
-  different shape (which of two images is "content" vs. "style" isn't
-  something the current single-attachment lookup can disambiguate). The
-  skill explicitly tells the model these two still need the user to
-  provide both images.
-- `ATTACHMENT_INJECTION_CONFIG` currently has exactly one entry
-  (`ai-image-engine`). Extending to another MCP server is a one-line
-  addition, by design.
+- `ATTACHMENT_INJECTION_CONFIG` currently only has entries for
+  `ai-image-engine`'s four image-taking tools. Extending to another
+  MCP server/tool is a one-entry addition, by design.
+- The style-transfer content/style disambiguation is upload-order only
+  (first image = content, second = style). If a user attaches them in the
+  opposite order, the result will be swapped — there's no other signal
+  (filename, explicit reference) currently available to disambiguate.
+- The MCP server's tool schemas have already drifted once since this
+  branch started (§7). `ATTACHMENT_INJECTION_CONFIG` has no automated way
+  to detect a future schema change — re-verify against a live `tools/list`
+  query if image injection silently stops working for a specific tool
+  again.
