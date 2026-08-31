@@ -39,6 +39,12 @@ mcpServers:
     headers:
       Authorization: "ApiKey ${ELASTIC_AGENT_BUILDER_API_KEY}"
 
+  jira-ticket-submission:
+    type: streamable-http
+    url: "${ATLASSIAN_URL}/v1/mcp"
+    headers:
+      Authorization: "Bearer ${JIRA_SERVICE_ACCOUNT_TOKEN}"
+
   ai-image-engine:
     type: streamable-http
     url: "http://172.16.5.125:8189/mcp"
@@ -75,4 +81,3 @@ endpoints:
             deploymentName: "gpt-5.2-chat"
           gpt-5.6-luna:
             deploymentName: "gpt-5.6-luna"
-

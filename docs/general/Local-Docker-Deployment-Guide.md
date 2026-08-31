@@ -2,24 +2,23 @@
 
 This guide documents how to run this LibreChat fork locally end-to-end,
 covering both the native (no Docker) workflow and the Docker Compose
-workflow — including how to point the deployed container at the shared
-Azure Cosmos DB (Mongo API) instance instead of the bundled local
-MongoDB container. It reflects the exact steps and gotchas hit while
-standing up the `hlw-dev-magic-box-mcp` branch locally.
+workflow — including how the deployed container connects to the shared
+Azure Cosmos DB (Mongo API) instance. Paths and settings below reflect
+this machine's checkout at
+`C:\Users\smadera\OneDrive - HLW International LLP\Documents\GitHub\LibreChat`.
 
 ---
 
 ## 1. Prerequisites
 
 - Docker Desktop (for the Docker workflow)
-- Node.js — `.nvmrc` pins `v24.16.0`. The native workflow has been
-  verified to also work on `v22.17.1` with one caveat (see
-  [Turborepo `strict` env-mode on Windows](#turborepo-strict-env-mode-on-windows)
-  below); the Docker workflow always uses the pinned version since the
-  `Dockerfile` builds `FROM node:24.16.0-alpine`.
-- A populated `.env` file at the repo root (see below). Neither `.env`
-  nor `docker-compose.override.yml` are committed — both are
-  `.gitignore`d, so every machine needs its own copy.
+- Node.js — `.nvmrc` pins `v24.16.0`. The Docker workflow always uses
+  this exact version since the `Dockerfile` builds `FROM
+  node:24.16.0-alpine`.
+- A populated `.env` file at the repo root, and a
+  `docker-compose.override.yml` (see below). **Neither is committed —
+  both are `.gitignore`d**, so this setup is local to this machine and
+  won't follow a `git checkout` to a different clone.
 
 ---
 
@@ -28,23 +27,23 @@ standing up the `hlw-dev-magic-box-mcp` branch locally.
 Docker Compose reads `.env` from the repo root two ways:
 
 - **Variable substitution** — `${PORT}`, `${UID}`, `${MEILI_MASTER_KEY}`,
-  `${MONGO_URI}`, etc. inside `docker-compose.yml` / override files are
-  resolved from this file at `docker compose` invocation time.
+  etc. inside `docker-compose.yml` / override files are resolved from
+  this file at `docker compose` invocation time.
 - **App runtime config** — `docker-compose.yml` bind-mounts the file
   straight into the container (`./.env` → `/app/.env`), so the Node
   process also loads it via `dotenv` at startup.
 
-If you only have an env file without the leading dot (e.g. a file
-literally named `env`), rename it — Compose will not pick it up
-otherwise:
-
-```bash
-mv env .env
-```
-
 Secrets that must be present for the stack to start cleanly:
 `JWT_SECRET`, `JWT_REFRESH_SECRET`, `CREDS_KEY`, `CREDS_IV`,
 `MEILI_MASTER_KEY`, `MONGO_URI`, `UID`/`GID`.
+
+**`MONGO_URI` is the live connection string, no override needed.**
+Unlike upstream LibreChat, this fork's `docker-compose.yml` does not
+bundle a local MongoDB container or hardcode a `MONGO_URI` — the `api`
+service simply uses whatever `MONGO_URI` is set to in `.env`. This
+machine's `.env` already points it at the team's Azure Cosmos DB
+instance (`mongodb+srv://...@librechatdb-dev.global.mongocluster.cosmos.azure.com/...`).
+No `docker-compose.override.yml` entry is required to redirect it.
 
 ---
 
@@ -54,19 +53,20 @@ Useful for fast iteration without rebuilding images.
 
 ```bash
 npm install
-npm run build          # see Turborepo caveat below if this fails on Windows
+npm run build          # see Turborepo caveat below if this fails
 npm run backend         # serves the built client + API on :3080
 ```
 
 ### Turborepo `strict` env-mode on Windows
 
-On this Windows/Git-Bash setup, `npm run build` (which runs
-`npx turbo run build`) failed for every package with no error output —
-each task's `npm run clean` step exited instantly with code 1 and zero
-stdout. Root cause: **Turborepo 2.x defaults `envMode` to `strict`**,
-which filters the environment passed to child tasks and dropped `PATH`
-in this environment, so the spawned `npm`/`node`/`rimraf` processes
-couldn't be found at all.
+On this Windows/Git-Bash setup, `npm run build` (which runs `npx turbo
+run build`) fails for every package with **no error output** — each
+task's `npm run clean` step exits instantly (well under a second) with
+code 1 and zero stdout, even for packages with no relation to whatever
+you changed. Root cause: **Turborepo 2.x defaults `envMode` to
+`strict`**, which filters the environment passed to child tasks and
+drops `PATH` in this environment, so the spawned `npm`/`node`/`rimraf`
+processes can't be found at all.
 
 Fix — build with loose env mode:
 
@@ -74,24 +74,12 @@ Fix — build with loose env mode:
 npx turbo run build --env-mode=loose
 ```
 
-A second, unrelated issue can show up alongside this: `tsdown` (used by
-`packages/data-provider`) depends on an **optional** peer package called
-`unrun` to load its config file. If your local Node version doesn't
-satisfy the *stricter* engine range some of `tsdown`'s own dependencies
-declare (e.g. Node `22.17.1` failing a `^22.18.0 || >=24.0.0` check),
-npm silently skips installing `unrun` even though `unrun` itself would
-have been fine with your Node version. Symptom:
-`Error: Failed to import module "unrun". Please ensure it is installed.`
-Fix:
+Or skip Turbo entirely and use the sequential fallback script, which
+doesn't invoke Turbo at all:
 
 ```bash
-npm install unrun --no-save
+npm run frontend
 ```
-
-Neither issue reproduces inside Docker, since the image builds with the
-exact pinned Node version in a clean Alpine environment and doesn't
-invoke Turborepo (the `Dockerfile` calls `npm run frontend`, the
-sequential non-Turbo build script).
 
 To stop a natively-run backend, find and kill the listening process —
 stopping the wrapping shell/task is not always enough to kill the
@@ -106,34 +94,12 @@ taskkill //F //PID <pid>
 
 ## 4. Option B — Running via Docker Compose
 
-### 4.1 Default stack
-
-`docker compose up -d` (with no override file) starts:
-
-| Service        | Purpose                                             |
-| -------------- | ---------------------------------------------------- |
-| `api`          | LibreChat server — pulls `registry.librechat.ai/danny-avila/librechat-dev:latest` by default |
-| `admin-panel`  | Bundled admin panel                                   |
-| `mongodb`      | Local MongoDB 8.0 container (`chat-mongodb`)          |
-| `meilisearch`  | Search indexing                                       |
-| `vectordb`     | pgvector, backing RAG                                 |
-| `rag_api`      | RAG file-search service                               |
-
-By default `api`'s `MONGO_URI` is **hardcoded** in `docker-compose.yml`
-to the bundled local Mongo (`mongodb://mongodb:27017/LibreChat`) — this
-overrides whatever is in `.env`, since it's set directly as a container
-`environment:` value. To use a different database (e.g. the shared
-Azure Cosmos DB instance), see 4.2.
-
-### 4.2 Pointing the container at Azure Cosmos DB
+### 4.1 `docker-compose.override.yml`
 
 `docker-compose.yml` says "do not edit directly" — customizations go in
 `docker-compose.override.yml` (gitignored, one per machine; see
 `docker-compose.override.yml.example` for the full menu of documented
-snippets). We used the example file's own documented pattern for this
-exact situation ("DISABLE THE MONGODB CONTAINER — YOU NEED TO SET AN
-ALTERNATIVE MONGODB URI IN THE .ENV FILE"), plus a local-build override
-and the `librechat.yaml` config mount:
+snippets). This machine's override does two things:
 
 ```yaml
 # docker-compose.override.yml
@@ -143,42 +109,26 @@ services:
     build:
       context: .
       target: node
-    environment:
-      - MONGO_URI=${MONGO_URI}
     volumes:
       - type: bind
         source: ./librechat.yaml
         target: /app/librechat.yaml
-  mongodb:
-    image: tianon/true
-    command: ""
-    entrypoint: ""
 ```
 
-What each part does:
-
-- `build:` — builds the `api` image **locally** from this repo's
-  `Dockerfile` (`target: node` stage) instead of pulling the pre-built
-  `librechat-dev:latest` registry image. Needed whenever you're running
-  code from this branch rather than the last published image.
-- `environment: MONGO_URI=${MONGO_URI}` — overrides the hardcoded local
-  Mongo URI, substituting whatever `MONGO_URI` is set to in the root
-  `.env` (in our case, the Azure Cosmos DB `mongodb+srv://` connection
-  string) at compose-parse time.
+- `image: librechat` + `build:` — builds the `api` image **locally**
+  from this repo's `Dockerfile` (`target: node` stage) instead of
+  pulling the pre-built `librechat-dev:latest` registry image. Needed
+  whenever you're running code from a local branch rather than the last
+  published image — without this, `docker compose up` silently runs
+  someone else's build and none of your source changes take effect.
 - `volumes:` (`librechat.yaml`) — **not mounted by default.** Without
   this, the container falls back to default config, silently dropping
   custom branding, `memory` settings, and all `mcpServers` entries (HR,
-  BIM, Deltek, RFP, Magic Box image engine, etc.) — the app just logs
-  `Config file YAML format is invalid: ENOENT ... /app/librechat.yaml`
+  BIM, Deltek, RFP, Elastic Agent Builder, Jira, etc.) — the app just
+  logs `Config file YAML format is invalid: ENOENT ... /app/librechat.yaml`
   and moves on.
-- `mongodb: image: tianon/true` — replaces the local Mongo container
-  with a no-op stub, since it's unused once `api` points elsewhere.
-  `chat-mongodb` will show as `Restarting` in `docker compose ps`
-  forever — that's expected and harmless (the stub image exits
-  immediately and `restart: always` keeps relaunching it); nothing else
-  depends on it being healthy.
 
-### 4.3 Clean build, clean container
+### 4.2 Clean build, clean container
 
 To guarantee the deployed image reflects the current source with no
 stale cached layers, and the running container has no leftover state
@@ -196,7 +146,10 @@ docker compose up -d --force-recreate
   even if Compose thinks their config hasn't changed, so you're never
   running a stale container against a freshly built image.
 
-### 4.4 Verifying the deployment
+For a quick iteration where only `librechat.yaml` changed, skip the
+rebuild entirely — see §5.
+
+### 4.3 Verifying the deployment
 
 ```bash
 # Confirm the api container is on the freshly-built local image
@@ -221,7 +174,7 @@ listening on all interfaces at port 3080`.
 ## 5. Applying `librechat.yaml` changes
 
 `librechat.yaml` is **bind-mounted**, not baked into the image (see
-4.2). Editing it on the host is immediately visible inside the running
+4.1). Editing it on the host is immediately visible inside the running
 container's filesystem — the app just needs to re-read it:
 
 ```bash
@@ -229,8 +182,9 @@ docker compose restart api      # no rebuild needed
 ```
 
 You only need `docker compose build` again for changes to application
-code, `package.json`/lockfile, or the `Dockerfile` itself — i.e.
-anything actually copied/compiled into the image at build time.
+code (e.g. `api/server/services/MCP.js`), `package.json`/lockfile, or
+the `Dockerfile` itself — i.e. anything actually copied/compiled into
+the image at build time.
 
 ---
 
@@ -239,10 +193,11 @@ anything actually copied/compiled into the image at build time.
 LibreChat blocks MCP server URLs that resolve to private/internal
 addresses by default (`localhost`, RFC1918 ranges, `.internal`/`.local`
 TLDs) — this is intentional SSRF hardening, not a Docker networking
-bug. Symptom in the logs:
+bug. If an MCP server config points at a private LAN address and logs
+something like:
 
 ```
-[MCPServersRegistry] Failed to inspect server "ai-image-engine": Domain "http://172.16.5.125:8189" is not allowed
+[MCPServersRegistry] Failed to inspect server "<name>": Domain "http://<private-ip>:<port>" is not allowed
 ```
 
 Fix — add the specific private host:port to `mcpSettings.allowedAddresses`
@@ -252,15 +207,17 @@ MCP servers keep working normally):
 ```yaml
 mcpSettings:
   allowedAddresses:
-    - '172.16.5.125:8189'
+    - '<private-ip>:<port>'
 ```
 
 Do **not** use `mcpSettings.allowedDomains` for this — adding any
 private host there switches that field into **strict-whitelist mode**,
 which then blocks every public MCP domain not also explicitly listed
-(would have broken the HR/BIM/Deltek/RFP/Elastic Agent Builder servers,
-all on public hosts). `allowedAddresses` only exempts the one listed
-private target.
+(would break every other public server, e.g. HR/BIM/Deltek/RFP/Elastic
+Agent Builder/Jira). `allowedAddresses` only exempts the one listed
+private target. This doesn't apply to the Jira server on this branch —
+`https://mcp.atlassian.com` is public — but keep it in mind for any
+future private-network MCP server.
 
 Then `docker compose restart api` — no rebuild, same as any other
 `librechat.yaml` edit.
@@ -274,7 +231,7 @@ docker compose down          # stop & remove containers + network (keeps volumes
 ```
 
 For the native workflow, kill the listening `node` process directly
-(see [Option A](#4-option-a--running-natively-no-docker) above) — the
+(see [Option A](#3-option-a--running-natively-no-docker) above) — the
 task wrapper alone isn't guaranteed to kill the child process.
 
 ---
@@ -282,9 +239,9 @@ task wrapper alone isn't guaranteed to kill the child process.
 ## 8. Related documentation
 
 - [`LibreChat-Infrastructure-Integration-Branch-Management-Guide.md`](./LibreChat-Infrastructure-Integration-Branch-Management-Guide.md) —
-  git branch topology (`main` → `hlw-dev` → `hlw-prod`) and the Azure
-  Container Apps production deployment pipeline. This guide covers
-  local iteration only; use that one for pushing to Azure.
+  git branch topology and the Azure Container Apps production
+  deployment pipeline. This guide covers local iteration only; use that
+  one for pushing to Azure.
 - `docker-compose.override.yml.example` — the full menu of documented
   override snippets (SAML certs, mongo-express, Ollama, LiteLLM, etc.)
   this guide's override was adapted from.

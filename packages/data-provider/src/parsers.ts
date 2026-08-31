@@ -478,6 +478,10 @@ export function replaceSpecialVars({
     result = result.replace(/{{\s*current_user\s*}}/gi, user.name);
   }
 
+  if (user && user.email) {
+    result = result.replace(/{{\s*current_user_email\s*}}/gi, user.email);
+  }
+
   return result;
 }
 
