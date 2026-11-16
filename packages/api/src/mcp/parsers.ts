@@ -195,6 +195,20 @@ function truncateContent(text: string, maxLength = MAX_MCP_CITATION_CONTENT_LENG
 
 const MAX_MCP_CITATION_TITLE_LENGTH = 200;
 
+function resolveCitationTitle(
+  source: McpCitationSource,
+  hasExplicitTitle: boolean,
+  isUrl: boolean,
+): string {
+  if (hasExplicitTitle) {
+    return truncateSnippet(source.title as string, MAX_MCP_CITATION_TITLE_LENGTH);
+  }
+  if (isUrl) {
+    return deriveTitleFromUrl(source.citation);
+  }
+  return truncateSnippet(source.citation, MAX_MCP_CITATION_TITLE_LENGTH);
+}
+
 /** Rewrites a detected citation array into model-readable text (with copyable
  * anchors) plus the `ResultReference[]` the frontend citation renderer needs.
  * Caps the number of sources and the per-source content/title length so a
@@ -211,11 +225,7 @@ function buildMcpCitationContent(sources: McpCitationSource[]): {
     const hasExplicitTitle = typeof source.title === 'string' && source.title.length > 0;
     const isUrl = isHttpUrl(source.citation);
     const isSafeLink = isSafeCitationLink(source.citation);
-    const title = hasExplicitTitle
-      ? truncateSnippet(source.title as string, MAX_MCP_CITATION_TITLE_LENGTH)
-      : isUrl
-        ? deriveTitleFromUrl(source.citation)
-        : truncateSnippet(source.citation, MAX_MCP_CITATION_TITLE_LENGTH);
+    const title = resolveCitationTitle(source, hasExplicitTitle, isUrl);
     references.push({
       // Citations on an unsafe/unrecognized scheme (e.g. bare filename,
       // `javascript:`) get a synthetic, inert link rather than an empty
