@@ -56,17 +56,20 @@ RUN \
         sleep 10 ; \
     done
 
-COPY --chown=node:node . .
 
 # --chown sets ownership but not mode bits; files copied from a Windows/OneDrive
 # build context can carry restrictive permissions that survive the copy, which
-# breaks `rimraf` during the frontend build (EACCES on rmdir). Normalize before
-# building so it doesn't depend on the host's file mode bits.
-RUN chmod -R u+rwX /app
+# breaks `rimraf` during the frontend build (EACCES on rmdir). --chmod normalizes
+# only the copied files in the same layer; a separate `chmod -R /app` would
+# re-copy all of node_modules into a new layer.
+COPY --chown=node:node --chmod=u+rwX . .
 
 ARG VITE_MCP_SANDBOX_URL=
-RUN     # React client build with configurable memory
-    NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend &&     npm prune --omit=dev --no-audit --no-fund &&     npm cache clean --force
+RUN \
+    # React client build with configurable memory
+    NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend && \
+    npm prune --omit=dev --no-audit --no-fund && \
+    npm cache clean --force
 
 # Optional build metadata surfaced in Settings -> About for support triage.
 # Declared here (after the heavy install/build steps) so that commit/date
