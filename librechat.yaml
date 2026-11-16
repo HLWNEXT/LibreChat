@@ -47,24 +47,50 @@ mcpServers:
 
   ai-image-engine:
     type: streamable-http
-    url: "http://172.16.5.125:8189/mcp"
+    url: "${COMFYMCP_URL}"
     headers:
       Authorization: "Bearer ${COMFYMCP_SECRET_TOKEN}"
       X-User-Email: "{{LIBRECHAT_USER_EMAIL}}"
 
-mcpSettings:
-  allowedAddresses:
-    - '172.16.5.125:8189'
-
 interface:
   customWelcome: "Hey {{user.name}}, Norm here. What are we solving today?"
+  modelSelect: true
+  skills:
+    use: true
+    create: true
+    share: false
+    public: false
+    defaultActiveOnShare: true
+
+modelSpecs:
+  list:
+    - name: "norm"
+      label: "Norm Assistant"
+      default: true
+      iconURL: "https://hlwdevstorage.blob.core.windows.net/librechat-storage/images/6a3c06571cdae6b889914726/agent-agent_bZ3P3cd0_amjKviK18L7b-avatar-1782846560454.png"
+      preset:
+        endpoint: "agents"
+        agent_id: "agent_bZ3P3cd0_amjKviK18L7b"
+
+skillSync:
+  github:
+    enabled: true
+    runOnStartup: true
+    intervalMinutes: 60
+    sources:
+      - id: "diagram-design"
+        owner: "cathrynlavery"
+        repo: "diagram-design"
+        ref: "main"
+        paths: ["skills/diagram-design"]
+        token: "${GITHUB_SKILLS_TOKEN}"
 
 memory:
   personalize: true
   agent:
     enabled: true
     provider: "azureOpenAI"
-    model: "gpt-5.2-chat"
+    model: "gpt-6-luna"
     instructions: "You are a memory management assistant. Store and manage user information accurately, capturing durable facts, preferences, and context worth remembering across conversations."
     model_parameters:
       temperature: 0.1
@@ -77,7 +103,5 @@ endpoints:
         instanceName: "next-chatbot"
         version: "2025-04-01-preview"
         models:
-          gpt-5.2-chat:
-            deploymentName: "gpt-5.2-chat"
-          gpt-5.6-luna:
-            deploymentName: "gpt-5.6-luna"
+          gpt-6-luna:
+            deploymentName: "gpt-6-luna"
