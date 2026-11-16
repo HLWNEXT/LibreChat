@@ -152,7 +152,7 @@ export function SourceHovercard({
                 // hover popover (title). Styled like a footnote/superscript reference.
                 <button
                   type="button"
-                  className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-surface-tertiary px-1 align-super text-[10px] font-medium leading-none text-text-secondary transition-colors hover:bg-surface-hover focus:outline-none focus:ring-1 focus:ring-ring dark:bg-surface-secondary dark:hover:bg-surface-tertiary"
+                  className="bg-surface-tertiary text-text-secondary hover:bg-surface-hover focus:ring-text-primary dark:bg-surface-secondary dark:hover:bg-surface-tertiary text-3xs ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 align-super leading-none font-medium transition-colors focus:ring-1 focus:outline-none"
                   onMouseEnter={onMouseEnter}
                   onMouseLeave={onMouseLeave}
                 >

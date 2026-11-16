@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { XIcon } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import { Button, cn } from '@librechat/client';
+import type { CSSProperties } from 'react';
 import {
   CONFIG_HTML_TEXT_TAGS,
   CONFIG_HTML_CLASS_ATTR,
@@ -88,14 +89,18 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
       <div
         ref={containerRef}
         className={cn(
-          'w-full overflow-hidden text-center text-base whitespace-nowrap [&_a]:text-link [&_a]:underline',
+          '[&_a]:text-link w-full overflow-hidden text-center text-base whitespace-nowrap [&_a]:underline',
           !banner.persistable && 'px-4',
         )}
       >
         <div
           ref={textRef}
           className={cn('inline-block', scrollDuration != null && 'banner-marquee')}
-          style={scrollDuration != null ? { animationDuration: `${scrollDuration}s` } : undefined}
+          style={
+            scrollDuration != null
+              ? ({ '--banner-scroll-duration': `${scrollDuration}s` } as CSSProperties)
+              : undefined
+          }
           dangerouslySetInnerHTML={{ __html: sanitizedMessage }}
         ></div>
       </div>

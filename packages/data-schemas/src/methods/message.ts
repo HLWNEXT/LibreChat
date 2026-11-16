@@ -3084,7 +3084,9 @@ export function createMessageMethods(
     options?: { excludeFileIds?: Set<string> },
   ): Promise<{ file_id?: string; filepath: string; type: string; filename?: string } | null> {
     /*add a debug log to show the conversationId, userId, and typePrefix */
-    logger.debug(`[getLatestConversationAttachment] Searching for latest attachment in conversation: ${conversationId}, user: ${userId}, type: ${typePrefix}`);
+    logger.debug(
+      `[getLatestConversationAttachment] Searching for latest attachment in conversation: ${conversationId}, user: ${userId}, type: ${typePrefix}`,
+    );
     if (!conversationId || !userId || !typePrefix) {
       /*add a debug log to show the conversationId, userId, and typePrefix */
       logger.debug(`[getLatestConversationAttachment] Invalid parameters provided`);
@@ -3110,7 +3112,9 @@ export function createMessageMethods(
             !(ref.file_id && options?.excludeFileIds?.has(ref.file_id))
           ) {
             /*add a debug log to show the return value */
-            logger.debug(`[getLatestConversationAttachment] Found latest attachment: ${JSON.stringify(ref)}`);
+            logger.debug(
+              `[getLatestConversationAttachment] Found latest attachment: ${JSON.stringify(ref)}`,
+            );
 
             return {
               file_id: ref.file_id,
@@ -3122,7 +3126,9 @@ export function createMessageMethods(
         }
       }
       /*add a debug log to show that no attachment was found */
-      logger.debug(`[getLatestConversationAttachment] No attachment found for conversation: ${conversationId}, user: ${userId}, type: ${typePrefix}`);
+      logger.debug(
+        `[getLatestConversationAttachment] No attachment found for conversation: ${conversationId}, user: ${userId}, type: ${typePrefix}`,
+      );
       return null;
     } catch (err) {
       logger.error('[getLatestConversationAttachment] Error retrieving latest attachment:', err);

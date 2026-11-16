@@ -1,8 +1,8 @@
 import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
-import type { AnimationEvent } from 'react';
 import { HatGlasses } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { BirthdayIcon, TooltipAnchor, useRemScale } from '@librechat/client';
+import type { AnimationEvent } from 'react';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import Description, { isHtmlDescription } from '~/components/ui/Description';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
@@ -43,8 +43,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const remScale = useRemScale();
   const { isTemporary } = useChatSettings();
 
-  const [textHasMultipleLines, setTextHasMultipleLines] = useState(false);
-  const [lineCount, setLineCount] = useState(1);
+  const textHasMultipleLines = false;
+  const lineCount = 1;
   const [contentHeight, setContentHeight] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -109,11 +109,6 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     range.selectNodeContents(event.currentTarget);
     const { left, top, width, height } = range.getBoundingClientRect();
     announceGreetingSettled(left + width, top + height / 2);
-  }, []);
-
-  const handleLineCountChange = useCallback((count: number) => {
-    setTextHasMultipleLines(count > 1);
-    setLineCount(count);
   }, []);
 
   useEffect(() => {
@@ -193,7 +188,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               <p
                 key={`agent-name-${name}`}
                 onAnimationEnd={handleTitleSettled}
-                className={`animate-fadeIn ${getTextSizeClass(name)} text-center font-medium text-text-primary`}
+                className={`animate-fadeIn ${getTextSizeClass(name)} text-text-primary text-center font-medium`}
               >
                 {name}
               </p>
@@ -202,7 +197,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             <p
               key={`greeting-${greetingText}`}
               onAnimationEnd={handleTitleSettled}
-              className={`animate-fadeIn ${getTextSizeClass(greetingText)} text-center font-medium text-text-primary`}
+              className={`animate-fadeIn ${getTextSizeClass(greetingText)} text-text-primary text-center font-medium`}
             >
               {greetingText}
             </p>

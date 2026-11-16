@@ -2192,7 +2192,7 @@ html[data-input-modality='keyboard']
 }
 
 .banner-marquee {
-  animation: banner-marquee linear infinite;
+  animation: banner-marquee var(--banner-scroll-duration, 10s) linear infinite;
 }
 
 .banner-marquee:hover {

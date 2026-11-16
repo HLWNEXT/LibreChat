@@ -108,10 +108,7 @@
   },
   "client/src/components/Chat/Landing.tsx": {
     "shadcn/no-restyle": {
-      "count": 14
-    },
-    "shadcn/require-static-classes": {
-      "count": 2
+      "count": 10
     }
   },
   "client/src/components/Chat/Menus/Endpoints/CustomMenu.tsx": {
