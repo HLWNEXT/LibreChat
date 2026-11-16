@@ -1,0 +1,107 @@
+version: 1.3.13
+
+fileStrategy: "azure_blob"
+
+mcpServers:
+  hr-search:
+    type: streamable-http
+    url: "${MCP_BASE_URL}/mcp/hr"
+    headers:
+      Authorization: "Bearer ${MCP_SECRET_TOKEN}"
+
+  bim-search:
+    type: streamable-http
+    url: "${MCP_BASE_URL}/mcp/bim"
+    headers:
+      Authorization: "Bearer ${MCP_SECRET_TOKEN}"
+
+  bim-training-search:
+    type: streamable-http
+    url: "${MCP_BASE_URL}/mcp/bim-training"
+    headers:
+      Authorization: "Bearer ${MCP_SECRET_TOKEN}"
+
+  deltek-search:
+    type: streamable-http
+    url: "${MCP_BASE_URL}/mcp/deltek"
+    headers:
+      Authorization: "Bearer ${MCP_SECRET_TOKEN}"
+
+  rfp-search:
+    type: streamable-http
+    url: "${MCP_BASE_URL}/mcp/rfp"
+    headers:
+      Authorization: "Bearer ${MCP_SECRET_TOKEN}"
+
+  elastic-agent-builder:
+    type: streamable-http
+    url: "${KIBANA_URL}api/agent_builder/mcp"
+    headers:
+      Authorization: "ApiKey ${ELASTIC_AGENT_BUILDER_API_KEY}"
+
+  jira-ticket-submission:
+    type: streamable-http
+    url: "${ATLASSIAN_URL}/v1/mcp"
+    headers:
+      Authorization: "Bearer ${JIRA_SERVICE_ACCOUNT_TOKEN}"
+
+  ai-image-engine:
+    type: streamable-http
+    url: "${COMFYMCP_URL}"
+    headers:
+      Authorization: "Bearer ${COMFYMCP_SECRET_TOKEN}"
+      X-User-Email: "{{LIBRECHAT_USER_EMAIL}}"
+
+interface:
+  customWelcome: "Hey {{user.name}}, Norm here. What are we solving today?"
+  modelSelect: true
+  skills:
+    use: true
+    create: true
+    share: false
+    public: false
+    defaultActiveOnShare: true
+
+modelSpecs:
+  list:
+    - name: "norm"
+      label: "Norm Assistant"
+      default: true
+      iconURL: "https://hlwdevstorage.blob.core.windows.net/librechat-storage/images/6a3c06571cdae6b889914726/agent-agent_bZ3P3cd0_amjKviK18L7b-avatar-1782846560454.png"
+      preset:
+        endpoint: "agents"
+        agent_id: "agent_bZ3P3cd0_amjKviK18L7b"
+
+skillSync:
+  github:
+    enabled: true
+    runOnStartup: true
+    intervalMinutes: 60
+    sources:
+      - id: "diagram-design"
+        owner: "cathrynlavery"
+        repo: "diagram-design"
+        ref: "main"
+        paths: ["skills/diagram-design"]
+        token: "${GITHUB_SKILLS_TOKEN}"
+
+memory:
+  personalize: true
+  agent:
+    enabled: true
+    provider: "azureOpenAI"
+    model: "gpt-6-luna"
+    instructions: "You are a memory management assistant. Store and manage user information accurately, capturing durable facts, preferences, and context worth remembering across conversations."
+    model_parameters:
+      temperature: 0.1
+
+endpoints:
+  azureOpenAI:
+    groups:
+      - group: "HLW"
+        apiKey: "${AZURE_OPENAI_API_KEY}"
+        instanceName: "next-chatbot"
+        version: "2025-04-01-preview"
+        models:
+          gpt-6-luna:
+            deploymentName: "gpt-6-luna"

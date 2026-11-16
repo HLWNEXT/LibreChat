@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { Tools } from 'librechat-data-provider';
-import type { UIResource } from 'librechat-data-provider';
+import type { UIResource, ResultReference } from 'librechat-data-provider';
 import type * as t from './types';
 
 export const DEFAULT_MCP_IMAGE_DATA_MAX_BYTES: number = 10 * 1024 * 1024;
@@ -53,6 +53,151 @@ function assertImageDataWithinLimit(item: t.ImageContent): void {
     `MCP image result exceeds maximum size of ${maxBytes} bytes: ${estimatedBytes} bytes`,
   );
 }
+
+interface McpCitationSource {
+  content: string;
+  citation: string;
+  /** Optional human-readable label. When present, it's shown instead of deriving a title from `citation`. */
+  title?: string;
+  score?: number;
+}
+
+const MAX_MCP_CITATION_SOURCES = 20;
+const MAX_MCP_CITATION_CONTENT_LENGTH = 5000;
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/** Schemes allowed as a real clickable `href`. `file:` is included for internal
+ * network-share citations (e.g. `file://server/share/doc.pdf`) — whether it's
+ * actually navigable depends on the viewer's browser/OS policy, but it's safe
+ * to emit. Anything else (e.g. `javascript:`, `data:`) is neutralized. */
+const SAFE_CITATION_LINK_PROTOCOLS = new Set(['http:', 'https:', 'file:']);
+
+function isSafeCitationLink(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return SAFE_CITATION_LINK_PROTOCOLS.has(protocol);
+  } catch {
+    return false;
+  }
+}
+
+function isMcpCitationArray(value: unknown): value is McpCitationSource[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (item) =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof (item as McpCitationSource).content === 'string' &&
+        (item as McpCitationSource).content.length > 0 &&
+        typeof (item as McpCitationSource).citation === 'string' &&
+        (item as McpCitationSource).citation.length > 0 &&
+        ((item as McpCitationSource).title === undefined ||
+          (typeof (item as McpCitationSource).title === 'string' &&
+            ((item as McpCitationSource).title as string).length > 0)),
+    )
+  );
+}
+
+const HTML_ENTITY_MAP: Record<string, string> = {
+  '&rsquo;': '’',
+  '&lsquo;': '‘',
+  '&rdquo;': '”',
+  '&ldquo;': '“',
+  '&ccedil;': 'ç',
+  '&amp;': '&',
+  '&nbsp;': ' ',
+};
+
+function decodeHtmlEntities(text: string): string {
+  return text.replace(/&[a-z]+;/gi, (match) => HTML_ENTITY_MAP[match.toLowerCase()] ?? match);
+}
+
+function deriveTitleFromUrl(url: string): string {
+  try {
+    const { pathname } = new URL(url);
+    const segments = pathname.split('/').filter(Boolean);
+    const last = segments[segments.length - 1] ?? url;
+    return decodeURIComponent(last).replace(/[-+]/g, ' ');
+  } catch {
+    return url;
+  }
+}
+
+function truncateSnippet(text: string, maxLength = 300): string {
+  const cleaned = decodeHtmlEntities(text).replace(/\s+/g, ' ').trim();
+  if (cleaned.length <= maxLength) {
+    return cleaned;
+  }
+  return `${cleaned.slice(0, maxLength).trimEnd()}...`;
+}
+
+function truncateContent(text: string, maxLength = MAX_MCP_CITATION_CONTENT_LENGTH): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength).trimEnd()}...`;
+}
+
+const MAX_MCP_CITATION_TITLE_LENGTH = 200;
+
+/** Rewrites a detected citation array into model-readable text (with copyable
+ * anchors) plus the `ResultReference[]` the frontend citation renderer needs.
+ * Caps the number of sources and the per-source content/title length so a
+ * misbehaving MCP server can't balloon prompt tokens/cost or the UI payload. */
+function buildMcpCitationContent(sources: McpCitationSource[]): {
+  text: string;
+  references: ResultReference[];
+} {
+  const references: ResultReference[] = [];
+  const lines: string[] = [];
+  const cappedSources = sources.slice(0, MAX_MCP_CITATION_SOURCES);
+
+  cappedSources.forEach((source, index) => {
+    const hasExplicitTitle = typeof source.title === 'string' && source.title.length > 0;
+    const isUrl = isHttpUrl(source.citation);
+    const isSafeLink = isSafeCitationLink(source.citation);
+    const title = hasExplicitTitle
+      ? truncateSnippet(source.title as string, MAX_MCP_CITATION_TITLE_LENGTH)
+      : isUrl
+        ? deriveTitleFromUrl(source.citation)
+        : truncateSnippet(source.citation, MAX_MCP_CITATION_TITLE_LENGTH);
+    references.push({
+      // Citations on an unsafe/unrecognized scheme (e.g. bare filename,
+      // `javascript:`) get a synthetic, inert link rather than an empty
+      // string: `href=""` reloads the current page on click in most
+      // browsers, which is a jarring mid-conversation surprise. `type:
+      // 'link'` (not 'file') avoids the Sources side panel treating this as
+      // a downloadable agent file with a fake fileId, which would silently
+      // fail to download.
+      link: isSafeLink ? source.citation : `#mcp-source-${index}`,
+      type: 'link',
+      title,
+      attribution: title,
+      snippet: truncateSnippet(source.content),
+    });
+    const sourceLine = isSafeLink
+      ? `Source [${index}]: ${title} (${source.citation})`
+      : `Source [${index}]: ${title}`;
+    lines.push(
+      `${sourceLine}\n${truncateContent(source.content)}\nAnchor: \\ue202turn0ref${index}`,
+    );
+  });
+
+  return { text: lines.join('\n\n'), references };
+}
+
+const MCP_CITATION_INSTRUCTIONS = `
+CITATION FORMAT: When you use information from a source above, cite it immediately after the relevant statement using its exact Anchor value (e.g. \\ue202turn0ref0). Output the escape sequence EXACTLY as shown — do not substitute other symbols. Cite multiple sources for one statement by concatenating anchors: \\ue202turn0ref0\\ue202turn0ref1.`;
 
 const RECOGNIZED_PROVIDERS = new Set([
   'google',
@@ -153,6 +298,7 @@ export function formatToolContent(
 
   const imageUrls: t.FormattedContent[] = [];
   const uiResources: UIResource[] = [];
+  const mcpReferences: ResultReference[] = [];
   let currentTextBlock = '';
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
@@ -163,6 +309,20 @@ export function formatToolContent(
     resource: (item: Extract<t.ToolContentPart, { type: 'resource' }>) => void;
   } = {
     text: (item) => {
+      const trimmed = item.text.trim();
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed: unknown = JSON.parse(trimmed);
+          if (isMcpCitationArray(parsed)) {
+            const { text, references } = buildMcpCitationContent(parsed);
+            currentTextBlock += (currentTextBlock ? '\n\n' : '') + text;
+            mcpReferences.push(...references);
+            return;
+          }
+        } catch {
+          // Not JSON (or not a citation array) — fall through to plain text.
+        }
+      }
       currentTextBlock += (currentTextBlock ? '\n\n' : '') + item.text;
     },
 
@@ -238,6 +398,10 @@ UI Resource Markers Available:
     currentTextBlock += uiInstructions;
   }
 
+  if (mcpReferences.length > 0) {
+    currentTextBlock += '\n' + MCP_CITATION_INSTRUCTIONS;
+  }
+
   let artifacts: t.Artifacts = undefined;
   if (imageUrls.length > 0) {
     artifacts = { content: imageUrls };
@@ -247,6 +411,13 @@ UI Resource Markers Available:
     artifacts = {
       ...artifacts,
       [Tools.ui_resources]: { data: uiResources },
+    };
+  }
+
+  if (mcpReferences.length > 0) {
+    artifacts = {
+      ...artifacts,
+      [Tools.mcp_search]: { turn: 0, references: mcpReferences },
     };
   }
 

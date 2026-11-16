@@ -134,6 +134,7 @@ export type Artifacts =
         fileCitations?: boolean;
       };
       [Tools.web_search]?: SearchResultData;
+      [Tools.mcp_search]?: SearchResultData;
       files?: Array<{ id: string; name: string }>;
       session_id?: string;
       file_ids?: string[];

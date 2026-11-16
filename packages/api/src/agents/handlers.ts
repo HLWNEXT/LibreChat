@@ -1503,6 +1503,17 @@ async function writeSandboxTextForAuthoring({
     return errorResult(tc, `Failed to write "${filePath}" to the code-execution sandbox.`);
   }
 
+  /* Diagnostic: `output.artifact.files` gates the persist-as-attachment path
+   * in callbacks.js's `isCodeArtifactToolOutput` handling — if codeapi's
+   * `/exec` response for this write doesn't include `files`, the created
+   * file never gets downloaded/persisted, and the model's `sandbox:` link
+   * to it has nothing real to resolve to. Logging the raw shape here until
+   * that's confirmed one way or the other. */
+  logger.debug(
+    `[file_authoring] writeSandboxFile result for "${filePath}": ` +
+      `session_id=${writeResult.session_id ?? 'none'} files=${JSON.stringify(writeResult.files ?? null)}`,
+  );
+
   const diff =
     oldContent !== undefined ? createUnifiedDiff(filePath, oldContent, content) : undefined;
   const action = created ? 'Created' : 'Updated';

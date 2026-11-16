@@ -1,7 +1,6 @@
 import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
-import { easings } from '@react-spring/web';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { BirthdayIcon, TooltipAnchor, SplitText } from '@librechat/client';
+import { BirthdayIcon, TooltipAnchor } from '@librechat/client';
 import {
   getIconEndpoint,
   getEntity,
@@ -193,34 +192,20 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
           </div>
           {((isAgent || isAssistant) && name) || name ? (
             <div className="flex flex-col items-center gap-0 p-2">
-              <SplitText
-                key={`split-text-${name}`}
-                text={name}
-                className={`${getTextSizeClass(name)} font-medium text-text-primary`}
-                delay={50}
-                textAlign="center"
-                animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
-                animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
-                easing={easings.easeOutCubic}
-                threshold={0}
-                rootMargin="0px"
-                onLineCountChange={handleLineCountChange}
-              />
+              <p
+                key={`agent-name-${name}`}
+                className={`animate-fadeIn ${getTextSizeClass(name)} text-center font-medium text-text-primary`}
+              >
+                {name}
+              </p>
             </div>
           ) : (
-            <SplitText
-              key={`split-text-${greetingText}${user?.name ? '-user' : ''}`}
-              text={greetingText}
-              className={`${getTextSizeClass(greetingText)} font-medium text-text-primary`}
-              delay={50}
-              textAlign="center"
-              animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
-              animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
-              easing={easings.easeOutCubic}
-              threshold={0}
-              rootMargin="0px"
-              onLineCountChange={handleLineCountChange}
-            />
+            <p
+              key={`greeting-${greetingText}`}
+              className={`animate-fadeIn ${getTextSizeClass(greetingText)} text-center font-medium text-text-primary`}
+            >
+              {greetingText}
+            </p>
           )}
         </div>
         {description &&

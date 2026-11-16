@@ -1,3 +1,4 @@
+import { Tools } from 'librechat-data-provider';
 import { formatToolContent } from '../parsers';
 import type * as t from '../types';
 
@@ -502,6 +503,282 @@ describe('formatToolContent', () => {
       const [content, artifacts] = formatToolContent(result, 'google');
       expect(content).toBe('Response with metadata');
       expect(artifacts).toBeUndefined();
+    });
+  });
+
+  describe('MCP citation detection', () => {
+    const citationSource = {
+      content: 'This page identifies HLW&rsquo;s approach and standards related to using worksets.',
+      citation: 'https://hlw.atlassian.net/wiki/spaces/PD/pages/2107408385/Worksets',
+      score: 12.154897,
+    };
+
+    it('extracts references and rewrites text when the tool result is a citation array', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([citationSource]) }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(content).toContain('Worksets');
+      expect(content).toContain(citationSource.citation);
+      expect(content).toContain('\\ue202turn0ref0');
+      expect(content).not.toContain('"score"');
+
+      expect(artifacts?.[Tools.mcp_search]?.turn).toBe(0);
+      const references = artifacts?.[Tools.mcp_search]?.references;
+      expect(references).toHaveLength(1);
+      expect(references?.[0]).toMatchObject({
+        link: citationSource.citation,
+        type: 'link',
+        title: 'Worksets',
+        attribution: 'Worksets',
+      });
+      expect(references?.[0].snippet?.length).toBeLessThanOrEqual(303);
+      expect(references?.[0].snippet).not.toContain('&rsquo;');
+    });
+
+    it('assigns sequential indices for multiple sources in one call', () => {
+      const secondSource = {
+        content: 'Second source content.',
+        citation: 'https://hlw.atlassian.net/wiki/spaces/PD/pages/2159673345/Modelling',
+        score: 10.65,
+      };
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([citationSource, secondSource]) }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(content).toContain('\\ue202turn0ref0');
+      expect(content).toContain('\\ue202turn0ref1');
+      expect(artifacts?.[Tools.mcp_search]?.references).toHaveLength(2);
+    });
+
+    it('includes citation format instructions for the model', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([citationSource]) }],
+      };
+
+      const [content] = formatToolContent(result, 'openai');
+      expect(content.toLowerCase()).toContain('citation format');
+    });
+
+    it('does not treat plain text as citations', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: 'Just a normal response, not JSON.' }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+      expect(content).toBe('Just a normal response, not JSON.');
+      expect(artifacts).toBeUndefined();
+    });
+
+    it('does not treat an unrelated JSON array as citations', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([{ id: 1, name: 'not a citation' }]) }],
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai');
+      expect(artifacts).toBeUndefined();
+    });
+
+    it('detects citations in one text item while leaving another plain-text item untouched', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          { type: 'text', text: JSON.stringify([citationSource]) },
+          { type: 'text', text: 'Some additional plain-text commentary.' },
+        ],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(content).toContain('\\ue202turn0ref0');
+      expect(content).toContain('Some additional plain-text commentary.');
+      expect(artifacts?.[Tools.mcp_search]?.references).toHaveLength(1);
+    });
+
+    it('rejects the whole array when it mixes citation-shaped and non-citation-shaped objects', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify([citationSource, { id: 1, name: 'not a citation' }]),
+          },
+        ],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(artifacts).toBeUndefined();
+      expect(content).toBe(JSON.stringify([citationSource, { id: 1, name: 'not a citation' }]));
+    });
+
+    it('neutralizes a non-http(s) citation instead of rejecting the whole array', () => {
+      const javascriptSource = {
+        content: 'Malicious content',
+        citation: 'javascript:alert(1)',
+        score: 1,
+      };
+      const dataUriSource = {
+        content: 'Malicious content',
+        citation: 'data:text/html,<script>alert(1)</script>',
+        score: 1,
+      };
+
+      const jsResult: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([javascriptSource]) }],
+      };
+      const [jsContent, jsArtifacts] = formatToolContent(jsResult, 'openai');
+      expect(jsArtifacts).toBeDefined();
+      const jsReferences = jsArtifacts?.[Tools.mcp_search]?.references;
+      expect(jsReferences).toHaveLength(1);
+      expect(jsReferences?.[0].link).not.toBe('');
+      expect(jsReferences?.[0].link).not.toContain('javascript:');
+      expect(jsContent).toContain('\\ue202turn0ref0');
+
+      const dataResult: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([dataUriSource]) }],
+      };
+      const [, dataArtifacts] = formatToolContent(dataResult, 'openai');
+      const dataReferences = dataArtifacts?.[Tools.mcp_search]?.references;
+      expect(dataReferences).toHaveLength(1);
+      expect(dataReferences?.[0].link).not.toBe('');
+      expect(dataReferences?.[0].link).not.toContain('data:text/html');
+    });
+
+    it('uses an explicit title for display and the file:// UNC path as the real link', () => {
+      const uncSource = {
+        content: 'Proposal body text.',
+        citation: 'file://hlw.com/global/Marketing/03-Prospects/2026/HLW%20Proposal.pdf#page=1',
+        title: 'HLW Proposal.pdf',
+        score: 54.27,
+      };
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([uncSource]) }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      const references = artifacts?.[Tools.mcp_search]?.references;
+      expect(references).toHaveLength(1);
+      expect(references?.[0].link).toBe(uncSource.citation);
+      expect(references?.[0].title).toBe('HLW Proposal.pdf');
+      expect(content).toContain(`Source [0]: HLW Proposal.pdf (${uncSource.citation})`);
+    });
+
+    it('still neutralizes an unsafe-scheme citation even when an explicit title is present', () => {
+      const maliciousSource = {
+        content: 'Malicious content',
+        citation: 'javascript:alert(1)',
+        title: 'Looks legit',
+        score: 1,
+      };
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([maliciousSource]) }],
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai');
+
+      const references = artifacts?.[Tools.mcp_search]?.references;
+      expect(references).toHaveLength(1);
+      expect(references?.[0].link).not.toContain('javascript:');
+      expect(references?.[0].title).toBe('Looks legit');
+    });
+
+    it('accepts a citation array of bare filenames (real-world PDF-backed source shape)', () => {
+      const fileSources = [
+        {
+          content: '2026 HLW HOLIDAYS \n \n\nU.S. HOLIDAYS...',
+          citation: '2026 HLW Holiday Calendars.pdf',
+          score: 26.059875,
+        },
+        {
+          content: 'Employee handbook contents.',
+          citation: 'HLW-US-Employee-Handbook-Aug2025.pdf',
+          score: 8.493703,
+        },
+      ];
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify(fileSources) }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(artifacts).toBeDefined();
+      const references = artifacts?.[Tools.mcp_search]?.references;
+      expect(references).toHaveLength(2);
+      expect(references?.[0].link).not.toBe('');
+      expect(references?.[0].type).toBe('link');
+      expect(references?.[0].title).toBe('2026 HLW Holiday Calendars.pdf');
+      expect(content).toContain('Anchor: \\ue202turn0ref0');
+      expect(content).toContain('Anchor: \\ue202turn0ref1');
+    });
+
+    it('handles a mixed array of URL and bare-filename citations without poisoning the whole batch', () => {
+      const urlSource = {
+        content: 'Worksets content.',
+        citation: 'https://hlw.atlassian.net/wiki/spaces/PD/pages/2107408385/Worksets',
+        score: 12.15,
+      };
+      const fileSource = {
+        content: 'Holiday calendar content.',
+        citation: '2026 HLW Holiday Calendars.pdf',
+        score: 26.06,
+      };
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([urlSource, fileSource]) }],
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai');
+
+      const references = artifacts?.[Tools.mcp_search]?.references;
+      expect(references).toHaveLength(2);
+      expect(references?.[0].link).toBe(urlSource.citation);
+      expect(references?.[0].type).toBe('link');
+      expect(references?.[1].link).not.toBe('');
+      expect(references?.[1].link).not.toBe(urlSource.citation);
+      expect(references?.[1].type).toBe('link');
+      expect(references?.[1].title).toBe('2026 HLW Holiday Calendars.pdf');
+    });
+
+    it('caps the title length for a non-URL citation instead of using it verbatim', () => {
+      const longFilenameSource = {
+        content: 'Some content.',
+        citation: `${'a'.repeat(500)}.pdf`,
+        score: 1,
+      };
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify([longFilenameSource]) }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      const references = artifacts?.[Tools.mcp_search]?.references;
+      expect(references?.[0].title?.length).toBeLessThanOrEqual(203);
+      expect(references?.[0].attribution?.length).toBeLessThanOrEqual(203);
+      expect(content.length).toBeLessThan(longFilenameSource.citation.length + 1000);
+    });
+
+    it('caps the number of sources and truncates long per-source content', () => {
+      const manySources = Array.from({ length: 25 }, (_, i) => ({
+        content: 'x'.repeat(6000),
+        citation: `https://hlw.atlassian.net/wiki/spaces/PD/pages/${1000 + i}/Page${i}`,
+        score: i,
+      }));
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: JSON.stringify(manySources) }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      const references = artifacts?.[Tools.mcp_search]?.references;
+      expect(references).toHaveLength(20);
+      expect(content).toContain('\\ue202turn0ref19');
+      expect(content).not.toContain('\\ue202turn0ref20');
+
+      expect(content).toContain(`${'x'.repeat(5000)}...`);
+      expect(content).not.toContain('x'.repeat(5001));
     });
   });
 });

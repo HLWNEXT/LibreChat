@@ -51,6 +51,14 @@ export function useSearchResultsByTurn(attachments?: TAttachment[]) {
         }
       }
 
+      // Handle MCP tool citation attachments (mirrors web_search handling)
+      if (attachment.type === Tools.mcp_search && attachment[Tools.mcp_search]) {
+        const searchData = attachment[Tools.mcp_search];
+        if (searchData && typeof searchData.turn === 'number') {
+          turnMap[searchData.turn.toString()] = searchData;
+        }
+      }
+
       // Handle agent file search attachments (following web search pattern)
       if (attachment.type === Tools.file_search && attachment[Tools.file_search]) {
         const sources = getFileSearchSources(attachment[Tools.file_search]);

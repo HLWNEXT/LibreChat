@@ -190,6 +190,20 @@ describe('Citation Regex Patterns', () => {
       const match = INVALID_CITATION_REGEX.exec(text);
       expect(match).not.toBeNull();
     });
+
+    it('should match bare anchor tokens with no marker at all (e.g. MCP/skill citations without web_search context)', () => {
+      const text = 'Yes. The search found it.turn0ref0';
+      INVALID_CITATION_REGEX.lastIndex = 0;
+      const match = INVALID_CITATION_REGEX.exec(text);
+      expect(match).not.toBeNull();
+      expect(match?.[0]).toContain('turn0ref0');
+    });
+
+    it('should strip a bare anchor token entirely when used for cleanup', () => {
+      const text = 'Yes, we did.turn0ref0 Two proposals were found.turn0ref1';
+      const cleaned = text.replace(INVALID_CITATION_REGEX, '');
+      expect(cleaned).toBe('Yes, we did. Two proposals were found.');
+    });
   });
 
   describe('Integration: Full Citation Processing Flow', () => {

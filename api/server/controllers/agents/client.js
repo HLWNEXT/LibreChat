@@ -1423,6 +1423,10 @@ class AgentClient extends BaseClient {
           config.configurable.userMCPAuthMap = userMCPAuthMap;
         }
 
+        if (this.options.attachments?.length) {
+          config.configurable.currentImageAttachments = this.options.attachments;
+        }
+
         /** @deprecated Agent Chain */
         config.configurable.last_agent_id = agents[agents.length - 1].id;
         await run.processStream({ messages }, config, {

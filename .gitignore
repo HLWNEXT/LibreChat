@@ -73,6 +73,7 @@ bower_components/
 
 #config file
 librechat.yaml
+!librechat.yaml
 librechat.yml
 
 # Environment

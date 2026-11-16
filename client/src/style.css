@@ -2962,3 +2962,26 @@ html {
 .sharepoint-picker-bg {
   background-color: #f5f5f5;
 }
+
+@keyframes banner-marquee {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+.banner-marquee {
+  animation: banner-marquee linear infinite;
+}
+
+.banner-marquee:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner-marquee {
+    animation: none;
+  }
+}

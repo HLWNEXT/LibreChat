@@ -1,7 +1,7 @@
 import { XIcon } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import { Button, cn } from '@librechat/client';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   CONFIG_HTML_TEXT_TAGS,
   CONFIG_HTML_CLASS_ATTR,
@@ -10,10 +10,16 @@ import {
 import { useGetBannerQuery } from '~/data-provider';
 import store from '~/store';
 
+const MIN_SCROLL_SECONDS = 10;
+const SCROLL_PX_PER_SECOND = 60;
+
 export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) => void }) => {
   const { data: banner } = useGetBannerQuery();
   const [hideBannerHint, setHideBannerHint] = useRecoilState<string[]>(store.hideBannerHint);
   const bannerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLDivElement>(null);
+  const [scrollDuration, setScrollDuration] = useState<number | null>(null);
   const sanitize = useMemo(
     () =>
       createConfigHtmlSanitizer({
@@ -29,6 +35,25 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
     }
     return sanitize(banner.message);
   }, [banner?.message, sanitize]);
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const text = textRef.current;
+    if (!container || !text) {
+      return;
+    }
+    const measure = () => {
+      const overflowing = text.offsetWidth > container.clientWidth;
+      setScrollDuration(
+        overflowing ? Math.max(MIN_SCROLL_SECONDS, text.offsetWidth / SCROLL_PX_PER_SECOND) : null,
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    observer.observe(text);
+    return () => observer.disconnect();
+  }, [sanitizedMessage, banner]);
 
   useEffect(() => {
     if (onHeightChange && bannerRef.current) {
@@ -61,12 +86,19 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
       className="sticky top-0 z-20 flex items-center bg-presentation px-2 py-1 text-text-primary dark:bg-gradient-to-r md:relative"
     >
       <div
+        ref={containerRef}
         className={cn(
-          'text-md w-full truncate text-center [&_a]:text-blue-700 [&_a]:underline dark:[&_a]:text-blue-400',
+          'text-md w-full overflow-hidden whitespace-nowrap text-center [&_a]:text-blue-700 [&_a]:underline dark:[&_a]:text-blue-400',
           !banner.persistable && 'px-4',
         )}
-        dangerouslySetInnerHTML={{ __html: sanitizedMessage }}
-      ></div>
+      >
+        <div
+          ref={textRef}
+          className={cn('inline-block', scrollDuration != null && 'banner-marquee')}
+          style={scrollDuration != null ? { animationDuration: `${scrollDuration}s` } : undefined}
+          dangerouslySetInnerHTML={{ __html: sanitizedMessage }}
+        ></div>
+      </div>
       {!banner.persistable && (
         <Button
           size="icon"

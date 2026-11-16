@@ -21,6 +21,9 @@ let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let Message: mongoose.Model<IMessage>;
 let saveMessage: ReturnType<typeof createMessageMethods>['saveMessage'];
 let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
+let getLatestConversationAttachment: ReturnType<
+  typeof createMessageMethods
+>['getLatestConversationAttachment'];
 let getMessageTextStats: ReturnType<typeof createMessageMethods>['getMessageTextStats'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
@@ -40,6 +43,7 @@ beforeAll(async () => {
   const methods = createMessageMethods(mongoose);
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
+  getLatestConversationAttachment = methods.getLatestConversationAttachment;
   getMessageTextStats = methods.getMessageTextStats;
   updateMessage = methods.updateMessage;
   deleteMessages = methods.deleteMessages;
@@ -297,6 +301,133 @@ describe('Message Operations', () => {
           nonStringQuoteCount: 0,
         },
       ]);
+    });
+  });
+
+  describe('getLatestConversationAttachment', () => {
+    it('finds an image from an earlier turn when the current turn has none', async () => {
+      const conversationId = uuidv4();
+
+      await saveMessage(mockCtx, {
+        messageId: 'turn1',
+        conversationId,
+        text: 'here is an image',
+        user: 'user123',
+        files: [{ file_id: 'file-image-1', type: 'image/png', filepath: '/uploads/image1.png' }],
+      });
+      await waitForTimestampTick();
+
+      await saveMessage(mockCtx, {
+        messageId: 'turn2',
+        conversationId,
+        text: 'color it please',
+        user: 'user123',
+      });
+
+      const result = await getLatestConversationAttachment(conversationId, 'user123', 'image/');
+
+      expect(result).toEqual(
+        expect.objectContaining({ file_id: 'file-image-1', filepath: '/uploads/image1.png' }),
+      );
+    });
+
+    it('skips an intervening message whose only attachment is a non-matching type', async () => {
+      const conversationId = uuidv4();
+
+      await saveMessage(mockCtx, {
+        messageId: 'turn1',
+        conversationId,
+        text: 'here is an image',
+        user: 'user123',
+        files: [{ file_id: 'file-image-1', type: 'image/png', filepath: '/uploads/image1.png' }],
+      });
+      await waitForTimestampTick();
+
+      await saveMessage(mockCtx, {
+        messageId: 'turn2',
+        conversationId,
+        text: 'here is a pdf',
+        user: 'user123',
+        files: [{ file_id: 'file-pdf-1', type: 'application/pdf', filepath: '/uploads/doc.pdf' }],
+      });
+      await waitForTimestampTick();
+
+      await saveMessage(mockCtx, {
+        messageId: 'turn3',
+        conversationId,
+        text: 'color the image',
+        user: 'user123',
+      });
+
+      const result = await getLatestConversationAttachment(conversationId, 'user123', 'image/');
+
+      expect(result).toEqual(
+        expect.objectContaining({ file_id: 'file-image-1', filepath: '/uploads/image1.png' }),
+      );
+    });
+
+    it('does not return an attachment belonging to a different user', async () => {
+      const conversationId = uuidv4();
+
+      await saveMessage(
+        { userId: 'user456' },
+        {
+          messageId: 'turn1',
+          conversationId,
+          text: 'here is an image',
+          user: 'user456',
+          files: [{ file_id: 'file-image-1', type: 'image/png', filepath: '/uploads/image1.png' }],
+        },
+      );
+
+      const result = await getLatestConversationAttachment(conversationId, 'user123', 'image/');
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null when no attachment of the requested type exists', async () => {
+      const conversationId = uuidv4();
+
+      await saveMessage(mockCtx, {
+        messageId: 'turn1',
+        conversationId,
+        text: 'here is a pdf',
+        user: 'user123',
+        files: [{ file_id: 'file-pdf-1', type: 'application/pdf', filepath: '/uploads/doc.pdf' }],
+      });
+
+      const result = await getLatestConversationAttachment(conversationId, 'user123', 'image/');
+
+      expect(result).toBeNull();
+    });
+
+    it('skips excluded file_ids and returns the next-most-recent match', async () => {
+      const conversationId = uuidv4();
+
+      await saveMessage(mockCtx, {
+        messageId: 'turn1',
+        conversationId,
+        text: 'first image',
+        user: 'user123',
+        files: [{ file_id: 'file-image-1', type: 'image/png', filepath: '/uploads/image1.png' }],
+      });
+      await waitForTimestampTick();
+
+      await saveMessage(mockCtx, {
+        messageId: 'turn2',
+        conversationId,
+        text: 'second image',
+        user: 'user123',
+        files: [{ file_id: 'file-image-2', type: 'image/png', filepath: '/uploads/image2.png' }],
+      });
+
+      const result = await getLatestConversationAttachment(conversationId, 'user123', 'image/', {
+        excludeFileIds: new Set(['file-image-2']),
+      });
+
+      expect(result).toEqual(
+        expect.objectContaining({ file_id: 'file-image-1', filepath: '/uploads/image1.png' }),
+      );
     });
   });
 

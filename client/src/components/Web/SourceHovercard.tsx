@@ -15,6 +15,8 @@ export interface SourceData {
 interface SourceHovercardProps {
   source: SourceData;
   label: string;
+  /** Descriptive text for screen readers when `label` is a short visual marker (e.g. a citation index). Defaults to `label`. */
+  ariaLabel?: string;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
   onClick?: (e: React.MouseEvent) => void;
@@ -103,6 +105,7 @@ function FileHovercardContent({
 export function SourceHovercard({
   source,
   label,
+  ariaLabel,
   onMouseEnter,
   onMouseLeave,
   onClick,
@@ -144,21 +147,23 @@ export function SourceHovercard({
                   {label}
                 </button>
               ) : (
-                <a
-                  href={source.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ml-1 inline-block h-5 max-w-36 cursor-pointer items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-border-heavy bg-surface-secondary px-2 text-xs font-medium no-underline transition-colors hover:bg-surface-hover dark:border-border-medium dark:hover:bg-surface-tertiary"
+                // Plain marker, not a link — the real hyperlink only appears inside the
+                // hover popover (title). Styled like a footnote/superscript reference.
+                <button
+                  type="button"
+                  className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-surface-tertiary px-1 align-super text-[10px] font-medium leading-none text-text-secondary transition-colors hover:bg-surface-hover focus:outline-none focus:ring-1 focus:ring-ring dark:bg-surface-secondary dark:hover:bg-surface-tertiary"
                   onMouseEnter={onMouseEnter}
                   onMouseLeave={onMouseLeave}
                 >
                   {label}
-                </a>
+                </button>
               )
             }
           />
           <Ariakit.HovercardDisclosure className="ml-0.5 rounded-full text-text-primary focus:outline-none focus:ring-2 focus:ring-ring">
-            <VisuallyHidden>{localize('com_citation_more_details', { label })}</VisuallyHidden>
+            <VisuallyHidden>
+              {localize('com_citation_more_details', { label: ariaLabel ?? label })}
+            </VisuallyHidden>
             <ChevronDown className="icon-sm" aria-hidden="true" />
           </Ariakit.HovercardDisclosure>
 

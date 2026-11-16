@@ -37,7 +37,7 @@ const {
   getMCPManager,
 } = require('~/config');
 const db = require('~/models');
-const { findToken, createToken, updateToken, deleteTokens } = db;
+const { findToken, createToken, updateToken, deleteTokens, getLatestConversationAttachment } = db;
 const { getGraphApiToken } = require('./GraphTokenService');
 const { exchangeOboToken } = require('./OboTokenService');
 const { createOboTrustChecker } = require('./OboPolicyService');
@@ -51,6 +51,42 @@ const RECONNECT_THROTTLE_MS = 10_000;
 
 const missingToolCache = new Map();
 const MISSING_TOOL_TTL_MS = 10_000;
+
+/** Specific tools (keyed by `${toolName}${Constants.mcp_delimiter}${serverName}`,
+ *  matching `normalizedToolKey` below) that get matching-type attachment
+ *  URL(s) auto-injected into toolArguments when the model didn't already
+ *  supply them. `args` lists the argument name(s) to fill, in the order
+ *  current-turn attachments of `typePrefix` were uploaded (e.g. for
+ *  style-transfer, the first image becomes content, the second becomes
+ *  style). Keyed per TOOL, not per server — `ai-image-engine` hosts both
+ *  single-image edit tools and the two style-transfer tools' two-image
+ *  (content/style) shape (confirmed against the live server's tools/list;
+ *  generate_image_flux_kontext_style_transfer used to be single-image but
+ *  was changed server-side to match generate_image_gemini_style_transfer —
+ *  re-verify against tools/list if this ever mismatches again).
+ *  generate_image_gemini (pure text-to-image, no image input) and
+ *  check_job (job_id only) intentionally have no entry. Add an entry here
+ *  to extend; never inject unconditionally for every tool/server, since an
+ *  unrecognized argument can break a server whose schema disallows
+ *  additional properties. */
+const ATTACHMENT_INJECTION_CONFIG = {
+  [`generate_image_gemini_edit${Constants.mcp_delimiter}ai-image-engine`]: {
+    typePrefix: 'image/',
+    args: ['image_url'],
+  },
+  [`generate_image_flux_kontext_edit${Constants.mcp_delimiter}ai-image-engine`]: {
+    typePrefix: 'image/',
+    args: ['image_url'],
+  },
+  [`generate_image_flux_kontext_style_transfer${Constants.mcp_delimiter}ai-image-engine`]: {
+    typePrefix: 'image/',
+    args: ['content_image_url', 'style_image_url'],
+  },
+  [`generate_image_gemini_style_transfer${Constants.mcp_delimiter}ai-image-engine`]: {
+    typePrefix: 'image/',
+    args: ['content_image_url', 'style_image_url'],
+  },
+};
 
 async function userCanUseMCPServers(user, req) {
   if (!user?.id || !user?.role) {
@@ -171,6 +207,30 @@ async function resolveAllMcpConfigs(userId, user) {
 
 function getServerCustomUserVars(userMCPAuthMap, serverName) {
   return userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+}
+
+/**
+ * Pulls an Atlassian accountId out of a `lookupJiraAccountId` tool response.
+ * The response text is JSON (array of matches, or an object wrapping one), so this
+ * tries structured parsing first and falls back to a regex scan for resilience
+ * against minor shape differences.
+ */
+function extractJiraAccountId(rawContent) {
+  if (typeof rawContent !== 'string') {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(rawContent);
+    const list = Array.isArray(parsed) ? parsed : (parsed?.users ?? parsed?.results ?? [parsed]);
+    const first = Array.isArray(list) ? list[0] : list;
+    if (first?.accountId) {
+      return first.accountId;
+    }
+  } catch {
+    // fall through to regex fallback below
+  }
+  const match = rawContent.match(/"accountId"\s*:\s*"([^"]+)"/);
+  return match ? match[1] : null;
 }
 
 /**
@@ -817,15 +877,39 @@ function createToolInstance({
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 
-      const result = await mcpManager.callTool({
+      const attachmentInjection = ATTACHMENT_INJECTION_CONFIG[normalizedToolKey];
+      if (attachmentInjection && toolArguments && typeof toolArguments === 'object') {
+        // Ordered by upload order within the current turn (e.g. for
+        // style-transfer: first image = content, second = style).
+        const currentTurnMatches = (config?.configurable?.currentImageAttachments ?? []).filter(
+          (file) => file?.type?.startsWith(attachmentInjection.typePrefix) && file?.filepath,
+        );
+        const conversationId = config?.metadata?.thread_id;
+        const usedFileIds = new Set();
+        for (let i = 0; i < attachmentInjection.args.length; i++) {
+          let attachment = currentTurnMatches[i];
+          if (!attachment && conversationId && userId) {
+            attachment = await getLatestConversationAttachment(
+              conversationId,
+              userId,
+              attachmentInjection.typePrefix,
+              { excludeFileIds: usedFileIds },
+            );
+          }
+          if (attachment?.filepath) {
+            // MCP tool schemas here declare these as single strings, not arrays.
+            toolArguments[attachmentInjection.args[i]] = attachment.filepath;
+            if (attachment.file_id) {
+              usedFileIds.add(attachment.file_id);
+            }
+          }
+        }
+      }
+
+      const sharedCallToolParams = {
         serverName,
         serverConfig: capturedServerConfig,
-        toolName,
         provider,
-        toolArguments,
-        options: {
-          signal: derivedSignal,
-        },
         user: effectiveUser,
         requestBody: config?.configurable?.requestBody ?? capturedRequestBody,
         requestScopedConnections:
@@ -843,6 +927,50 @@ function createToolInstance({
         graphTokenResolver: getGraphApiToken,
         oboTokenResolver: exchangeOboToken,
         oboTrustChecker: createOboTrustChecker(),
+      };
+
+      if (
+        serverName === 'jira-ticket-submission' &&
+        toolName === 'createJiraIssue' &&
+        toolArguments &&
+        typeof toolArguments === 'object' &&
+        effectiveUser?.email &&
+        toolArguments.cloudId &&
+        !toolArguments.additional_fields?.reporter
+      ) {
+        try {
+          const [lookupResult] = await mcpManager.callTool({
+            ...sharedCallToolParams,
+            toolName: 'lookupJiraAccountId',
+            toolArguments: { cloudId: toolArguments.cloudId, searchString: effectiveUser.email },
+            options: { signal: derivedSignal },
+          });
+          const accountId = extractJiraAccountId(lookupResult);
+          if (accountId) {
+            toolArguments.additional_fields = {
+              ...(toolArguments.additional_fields ?? {}),
+              reporter: { id: accountId },
+            };
+          } else {
+            logger.warn(
+              `[MCP][${serverName}][${toolName}][User: ${userId}] Could not resolve Jira accountId for reporter auto-fill.`,
+            );
+          }
+        } catch (lookupError) {
+          logger.warn(
+            `[MCP][${serverName}][${toolName}][User: ${userId}] lookupJiraAccountId failed; reporter not auto-filled.`,
+            lookupError,
+          );
+        }
+      }
+
+      const result = await mcpManager.callTool({
+        ...sharedCallToolParams,
+        toolName,
+        toolArguments,
+        options: {
+          signal: derivedSignal,
+        },
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {

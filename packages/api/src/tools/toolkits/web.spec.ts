@@ -1,4 +1,8 @@
-import { buildWebSearchContext, buildWebSearchDynamicContext } from './web';
+import {
+  buildWebSearchContext,
+  buildCitationFormatContext,
+  buildWebSearchDynamicContext,
+} from './web';
 
 jest.mock('librechat-data-provider', () => ({
   Tools: { web_search: 'web_search' },
@@ -22,5 +26,18 @@ describe('web search context', () => {
       '# `web_search` Runtime Context\nConversation Date & Time: 2024-01-02T03:04:05.000Z',
     );
     expect(secondContext).toBe(context);
+  });
+});
+
+describe('citation format context', () => {
+  it('documents the escape-sequence anchor format, independent of web_search', () => {
+    const context = buildCitationFormatContext();
+
+    expect(context).toContain('\\ue202turn{N}{type}{index}');
+    expect(context).not.toContain('web_search');
+  });
+
+  it('is embedded verbatim inside the web search context', () => {
+    expect(buildWebSearchContext()).toContain(buildCitationFormatContext());
   });
 });

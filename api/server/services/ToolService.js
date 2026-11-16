@@ -16,6 +16,7 @@ const {
   isActionDomainAllowed,
   buildWebSearchContext,
   buildImageToolContext,
+  buildCitationFormatContext,
   buildToolClassification,
   getMissingCustomUserVars,
   buildWebSearchDynamicContext,
@@ -967,6 +968,13 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     dynamicToolContextMap[Tools.web_search] = buildWebSearchDynamicContext(
       req.conversationCreatedAt,
     );
+  } else if (hasMCPTools || hasFileSearch) {
+    // Models (especially Responses-API models) can reach for the same
+    // turn{N}{type}{index} citation convention on their own even
+    // without web_search — e.g. when citing MCP search results. Without
+    // these instructions the model emits unmarked tokens the client can't
+    // render, and they leak through as literal text instead of citations.
+    toolContextMap.citation_format = buildCitationFormatContext();
   }
 
   /**

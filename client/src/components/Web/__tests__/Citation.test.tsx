@@ -109,7 +109,7 @@ describe('Citation', () => {
     expect(screen.getByTestId('file-preview-dialog')).toHaveAttribute('data-file-id', 'file-123');
   });
 
-  it('keeps standalone web citations as links', () => {
+  it('renders standalone web citations as a plain numbered marker, not a link', () => {
     const searchResults = {
       '0': {
         organic: [
@@ -137,9 +137,12 @@ describe('Citation', () => {
       searchResults as any,
     );
 
-    expect(screen.getByRole('link', { name: 'example.com' })).toHaveAttribute(
-      'href',
-      'https://example.com',
-    );
+    // Inline marker shows the citation index as a plain button — no href, no navigation on click.
+    const marker = screen.getByRole('button', { name: '1' });
+    expect(marker).toBeInTheDocument();
+    expect(marker).not.toHaveAttribute('href');
+    expect(screen.queryByRole('link', { name: '1' })).not.toBeInTheDocument();
+    // The full descriptive label is still available for screen readers via the disclosure control.
+    expect(screen.getByText('More details about example.com')).toBeInTheDocument();
   });
 });

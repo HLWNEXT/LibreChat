@@ -327,7 +327,7 @@ export function Citation(props: CitationComponentProps) {
     return null;
   }
 
-  const getCitationLabel = () => {
+  const getCitationDescription = () => {
     return (
       refData.attribution ||
       refData.title ||
@@ -336,11 +336,16 @@ export function Citation(props: CitationComponentProps) {
     );
   };
 
+  // Inline marker shows a compact index (matching the model's cited source order)
+  // instead of the full title — hovering reveals the title/snippet via the hovercard.
+  const citationLabel = String((citation?.index ?? 0) + 1);
+
   return (
     <>
       <SourceHovercard
         source={toSourceData(refData)}
-        label={getCitationLabel()}
+        label={citationLabel}
+        ariaLabel={getCitationDescription()}
         onMouseEnter={() => setHoveredCitationId(citationId || null)}
         onMouseLeave={() => setHoveredCitationId(null)}
         onClick={isFileType ? handleFileClick : undefined}

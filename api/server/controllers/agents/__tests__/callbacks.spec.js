@@ -7,6 +7,7 @@ jest.mock('nanoid', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  writeAttachmentEvent: jest.fn(),
   HOST_FILE_AUTHORING_ARTIFACT_KEY: '__librechat_file_authoring',
   isCodeSessionToolName: jest.fn((name) =>
     ['execute_code', 'bash_tool', 'read_file'].includes(name),
@@ -252,6 +253,37 @@ describe('createToolEndCallback', () => {
 
       expect(artifactPromises).toHaveLength(0);
       expect(res.write).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('mcp_search artifact handling', () => {
+    it('should process mcp_search artifacts into an attachment', async () => {
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+
+      const output = {
+        tool_call_id: 'tool123',
+        artifact: {
+          [Tools.mcp_search]: {
+            turn: 0,
+            references: [
+              { link: 'https://example.com/a', type: 'link', title: 'A', snippet: 'snippet a' },
+            ],
+          },
+        },
+      };
+
+      const metadata = { run_id: 'run456', thread_id: 'thread789' };
+
+      await toolEndCallback({ output }, metadata);
+      const [attachment] = await Promise.all(artifactPromises);
+
+      expect(attachment).toMatchObject({
+        type: Tools.mcp_search,
+        toolCallId: 'tool123',
+        messageId: 'run456',
+        conversationId: 'thread789',
+      });
+      expect(attachment[Tools.mcp_search].references).toHaveLength(1);
     });
   });
 
@@ -644,6 +676,67 @@ describe('createToolEndCallback', () => {
 
       expect(processCodeOutput).not.toHaveBeenCalled();
       expect(res.write).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('createResponsesToolEndCallback', () => {
+  let req, res, tracker, artifactPromises, createResponsesToolEndCallback;
+  let writeAttachmentEvent;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    writeAttachmentEvent = require('@librechat/api').writeAttachmentEvent;
+
+    const callbacks = require('../callbacks');
+    createResponsesToolEndCallback = callbacks.createResponsesToolEndCallback;
+
+    req = {
+      user: { id: 'user123' },
+    };
+    res = {
+      headersSent: true,
+      writableEnded: false,
+      write: jest.fn(),
+    };
+    tracker = { nextSequence: jest.fn(() => 1) };
+    artifactPromises = [];
+  });
+
+  it('should process mcp_search artifacts into an attachment', async () => {
+    const toolEndCallback = createResponsesToolEndCallback({
+      req,
+      res,
+      tracker,
+      artifactPromises,
+    });
+
+    const output = {
+      tool_call_id: 'tool123',
+      artifact: {
+        [Tools.mcp_search]: {
+          turn: 0,
+          references: [
+            { link: 'https://example.com/a', type: 'link', title: 'A', snippet: 'snippet a' },
+          ],
+        },
+      },
+    };
+
+    const metadata = { run_id: 'run456', thread_id: 'thread789' };
+
+    await toolEndCallback({ output }, metadata);
+    const [attachment] = await Promise.all(artifactPromises);
+
+    expect(attachment).toMatchObject({
+      type: Tools.mcp_search,
+      toolCallId: 'tool123',
+    });
+    expect(attachment[Tools.mcp_search].references).toHaveLength(1);
+    expect(writeAttachmentEvent).toHaveBeenCalledWith(res, 1, attachment, {
+      messageId: 'run456',
+      conversationId: 'thread789',
     });
   });
 });

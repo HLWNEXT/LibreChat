@@ -846,6 +846,7 @@ export type TAttachmentMetadata = {
   [Tools.ui_resources]?: UIResource[];
   [Tools.web_search]?: SearchResultData;
   [Tools.file_search]?: SearchResultData;
+  [Tools.mcp_search]?: SearchResultData;
 };
 
 export type TAttachment =
