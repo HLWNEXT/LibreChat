@@ -18,6 +18,8 @@ function cleanupText(text: string): string {
   return text.replace(INVALID_CITATION_REGEX, '').replace(CLEANUP_REGEX, '');
 }
 
+const compositeRefRegex = new RegExp(STANDALONE_PATTERN.source, 'g');
+
 /**
  * Checks if a standalone marker is truly standalone (not inside a composite block).
  * A marker is inside a composite if there's an opening \ue200 without a closing \ue201 after it.
@@ -28,17 +30,20 @@ function cleanupText(text: string): string {
  * - Pure Unicode format: "..."
  * - Mixed formats: "\ue200..." (different formats for open/close)
  */
-function isStandaloneMarker(text: string, position: number): boolean {
-  const beforeText = text.substring(0, position);
+function lastIndexBefore(text: string, needle: string, position: number): number {
+  const fromIndex = position - needle.length;
+  return fromIndex < 0 ? -1 : text.lastIndexOf(needle, fromIndex);
+}
 
-  // Find rightmost composite block start (either format)
-  const lastUe200Literal = beforeText.lastIndexOf('\\ue200');
-  const lastUe200Char = beforeText.lastIndexOf('\ue200');
+function isStandaloneMarker(text: string, position: number): boolean {
+  // Find rightmost composite block start (either format), ending before `position`
+  const lastUe200Literal = lastIndexBefore(text, '\\ue200', position);
+  const lastUe200Char = lastIndexBefore(text, '\ue200', position);
   const lastUe200 = Math.max(lastUe200Literal, lastUe200Char);
 
   // Find rightmost composite block end (either format)
-  const lastUe201Literal = beforeText.lastIndexOf('\\ue201');
-  const lastUe201Char = beforeText.lastIndexOf('\ue201');
+  const lastUe201Literal = lastIndexBefore(text, '\\ue201', position);
+  const lastUe201Char = lastIndexBefore(text, '\ue201', position);
   const lastUe201 = Math.max(lastUe201Literal, lastUe201Char);
 
   // Standalone if: no opening marker OR closing marker appears after opening
@@ -193,7 +198,7 @@ function processTree(tree: Node) {
           const compositeText = matchText;
 
           // Use a regular expression to extract reference indices
-          const compositeRefRegex = new RegExp(STANDALONE_PATTERN.source, 'g');
+          compositeRefRegex.lastIndex = 0;
           let refMatch: RegExpExecArray | null;
           const citations: Array<Citation> = [];
 

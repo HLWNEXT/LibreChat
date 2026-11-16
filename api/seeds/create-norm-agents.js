@@ -156,7 +156,8 @@ function buildAgents(ids, author, authorName, now) {
     base({
       id: ids.hr,
       name: 'HR Specialist',
-      description: 'Expert on HLW HR policies, benefits, time off, payroll, and employee procedures',
+      description:
+        'Expert on HLW HR policies, benefits, time off, payroll, and employee procedures',
       instructions: HR_INSTRUCTIONS,
       provider: PROVIDER,
       model: MODEL,
@@ -188,7 +189,8 @@ function buildAgents(ids, author, authorName, now) {
     base({
       id: ids.bimTraining,
       name: 'BIM Training Specialist',
-      description: 'Finds Pinnacle Series BIM training courses on Revit, AutoCAD, Navisworks, and more',
+      description:
+        'Finds Pinnacle Series BIM training courses on Revit, AutoCAD, Navisworks, and more',
       instructions: BIM_TRAINING_INSTRUCTIONS,
       provider: PROVIDER,
       model: MODEL,
@@ -204,7 +206,8 @@ function buildAgents(ids, author, authorName, now) {
     base({
       id: ids.deltek,
       name: 'Deltek Specialist',
-      description: 'Expert on Deltek Vantagepoint: time entry, expenses, project codes, and reporting',
+      description:
+        'Expert on Deltek Vantagepoint: time entry, expenses, project codes, and reporting',
       instructions: DELTEK_INSTRUCTIONS,
       provider: PROVIDER,
       model: MODEL,
@@ -220,7 +223,8 @@ function buildAgents(ids, author, authorName, now) {
     base({
       id: ids.it,
       name: 'IT Specialist',
-      description: 'General IT support: software, hardware, accounts, VPN, MFA, and tech troubleshooting',
+      description:
+        'General IT support: software, hardware, accounts, VPN, MFA, and tech troubleshooting',
       instructions: IT_INSTRUCTIONS,
       provider: PROVIDER,
       model: MODEL,
@@ -238,7 +242,8 @@ function buildAgents(ids, author, authorName, now) {
   const norm = base({
     id: ids.norm,
     name: 'Norm',
-    description: 'HLW AI assistant — routes questions to HR, BIM, Deltek, IT, and BIM Training specialists',
+    description:
+      'HLW AI assistant — routes questions to HR, BIM, Deltek, IT, and BIM Training specialists',
     instructions: NORM_INSTRUCTIONS,
     provider: PROVIDER,
     model: MODEL,
@@ -255,13 +260,15 @@ function buildAgents(ids, author, authorName, now) {
         from: ids.norm,
         to: ids.hr,
         edgeType: 'handoff',
-        description: 'HR questions about benefits, policies, payroll, time off, and employee procedures',
+        description:
+          'HR questions about benefits, policies, payroll, time off, and employee procedures',
       },
       {
         from: ids.norm,
         to: ids.bim,
         edgeType: 'handoff',
-        description: 'BIM and technical questions about Revit, AutoCAD, Navisworks, and HLW BIM standards',
+        description:
+          'BIM and technical questions about Revit, AutoCAD, Navisworks, and HLW BIM standards',
       },
       {
         from: ids.norm,
@@ -273,13 +280,15 @@ function buildAgents(ids, author, authorName, now) {
         from: ids.norm,
         to: ids.deltek,
         edgeType: 'handoff',
-        description: 'Deltek Vantagepoint questions about time entry, expenses, project codes, and reporting',
+        description:
+          'Deltek Vantagepoint questions about time entry, expenses, project codes, and reporting',
       },
       {
         from: ids.norm,
         to: ids.it,
         edgeType: 'handoff',
-        description: 'IT support questions about software, hardware, accounts, VPN, and general tech issues',
+        description:
+          'IT support questions about software, hardware, accounts, VPN, and general tech issues',
       },
     ],
   });
@@ -300,9 +309,7 @@ async function main() {
   const aclCol = db.collection('aclentries');
   const rolesCol = db.collection('accessroles');
 
-  const adminUser =
-    (await usersCol.findOne({ role: 'ADMIN' })) ??
-    (await usersCol.findOne({}));
+  const adminUser = (await usersCol.findOne({ role: 'ADMIN' })) ?? (await usersCol.findOne({}));
   if (!adminUser) {
     throw new Error('No users found — register a user first');
   }
@@ -318,19 +325,30 @@ async function main() {
 
   const roles = await rolesCol.find({}).toArray();
   const agentOwnerRoleId =
-    existingAgentAcl?.roleId ??
-    roles.find((r) => r.name === 'com_ui_role_owner')?._id?.toString();
+    existingAgentAcl?.roleId ?? roles.find((r) => r.name === 'com_ui_role_owner')?._id?.toString();
   const remoteAgentOwnerRoleId =
     existingRemoteAcl?.roleId ??
     roles.find((r) => r.name === 'com_ui_remote_agent_role_owner')?._id?.toString();
 
   if (!agentOwnerRoleId || !remoteAgentOwnerRoleId) {
-    throw new Error('Could not find owner role IDs — run LibreChat at least once to initialise roles');
+    throw new Error(
+      'Could not find owner role IDs — run LibreChat at least once to initialise roles',
+    );
   }
 
   // Remove previously seeded agents and their ACL entries
-  const seedNames = ['HR Specialist', 'BIM Specialist', 'BIM Training Specialist', 'Deltek Specialist', 'IT Specialist', 'Norm'];
-  const oldAgents = await agentsCol.find({ name: { $in: seedNames }, author }).project({ _id: 1 }).toArray();
+  const seedNames = [
+    'HR Specialist',
+    'BIM Specialist',
+    'BIM Training Specialist',
+    'Deltek Specialist',
+    'IT Specialist',
+    'Norm',
+  ];
+  const oldAgents = await agentsCol
+    .find({ name: { $in: seedNames }, author })
+    .project({ _id: 1 })
+    .toArray();
   if (oldAgents.length > 0) {
     const oldIds = oldAgents.map((a) => a._id);
     await aclCol.deleteMany({ resourceId: { $in: oldIds } });

@@ -4,7 +4,7 @@ import { Tools, replaceSpecialVars } from 'librechat-data-provider';
  * Citation escape-sequence instructions, shared by every tool whose results
  * might get cited. Models (especially Responses-API models) can reach for
  * this citation convention on their own even when only MCP/file_search tools
- * are active — the client's renderer only recognizes properly ``-marked
+ * are active — the client's renderer only recognizes properly ``-marked
  * anchors, so any tool that can surface citable content needs to teach the
  * model this format, not just web_search.
  */
@@ -27,14 +27,14 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
 /** Builds the web search tool context with citation format instructions. */
 export function buildWebSearchContext(): string {
   return `# \`${Tools.web_search}\`:
-**Execute immediately without preface.** After search, provide a brief summary addressing the query directly, then structure your response with clear Markdown formatting (## headers, lists, tables). Cite sources properly, tailor tone to query type, and provide comprehensive details.
+Use this tool when the user's request calls for it, whether directly, indirectly, or implicitly, or when answering requires information that is current, real-time, or otherwise beyond your own knowledge; for questions you can answer reliably on your own, respond directly without searching. When searching, execute immediately without preface, then provide a brief summary addressing the query directly, then structure your response with clear Markdown formatting (## headers, lists, tables). Cite sources properly, tailor tone to query type, and provide comprehensive details.
 
 Use the conversation date/time from the dynamic runtime context when recency matters.
 
 ${buildCitationFormatContext()}`.trim();
 }
 
-/** Builds dynamic web search context scoped to the conversation anchor time. */
+/** Builds dynamic web search context scoped to the logical turn start time. */
 export function buildWebSearchDynamicContext(now?: string | number | Date): string {
   return `# \`${Tools.web_search}\` Runtime Context
 Conversation Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}', now })}`.trim();
