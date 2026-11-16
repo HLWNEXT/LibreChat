@@ -1,7 +1,7 @@
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { XIcon } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import { Button, cn } from '@librechat/client';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   CONFIG_HTML_TEXT_TAGS,
   CONFIG_HTML_CLASS_ATTR,
@@ -83,12 +83,12 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
   return (
     <div
       ref={bannerRef}
-      className="sticky top-0 z-20 flex items-center bg-presentation px-2 py-1 text-text-primary dark:bg-gradient-to-r md:relative"
+      className="bg-presentation text-text-primary sticky top-0 z-20 flex items-center px-2 py-1 md:relative"
     >
       <div
         ref={containerRef}
         className={cn(
-          'text-md w-full overflow-hidden whitespace-nowrap text-center [&_a]:text-blue-700 [&_a]:underline dark:[&_a]:text-blue-400',
+          'w-full overflow-hidden text-center text-base whitespace-nowrap [&_a]:text-link [&_a]:underline',
           !banner.persistable && 'px-4',
         )}
       >
@@ -107,7 +107,7 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
           className="size-8"
           onClick={onClick}
         >
-          <XIcon className="mx-auto h-4 w-4 text-text-primary" aria-hidden="true" />
+          <XIcon className="text-text-primary mx-auto h-4 w-4" aria-hidden="true" />
         </Button>
       )}
     </div>
