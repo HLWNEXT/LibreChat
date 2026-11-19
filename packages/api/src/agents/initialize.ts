@@ -126,13 +126,13 @@ import {
 import { assertChatProjectInstructions, ChatProjectResourcesChangedError } from '../projects/turn';
 import { extractAgentContent, extractSkillContent } from '../protection/adapters/submissions';
 import { selectCodeFileGenerations, planCodeSnapshotMounts } from '~/files/code/destinations';
+import { registerMemoryTools, memoryToolUsageGuard, isAgentMemoryDisabled } from './memory';
 import { createConfiguredContentInspector, inspectContent } from '../protection/runtime';
 import { assertAgentAttachmentLimits, isModelBoundAttachmentFile } from './attachments';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { resolveAttachedWorkspaceReadFileLines } from '~/code/workspace';
 import { isValidInstructionsPromptLink } from './instructions/linked';
 import { PARTIAL_RESOLVED_CONVERSATION } from './conversationSymbols';
-import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { isImplicitStatefulCodeRouteAvailable } from '~/code/config';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { prepareQueuedCodeFileContext } from '~/files/code/queued';
@@ -2458,7 +2458,8 @@ export async function initializeAgent(
    * memory configured, user permitted); the marker on `agent.tools` is the
    * per-agent opt-in. The runtime instances are created in the tool service.
    */
-  const agentRequestsMemory = (agent.tools ?? []).includes(Tools.memory);
+  const agentRequestsMemory =
+    (agent.tools ?? []).includes(Tools.memory) && !isAgentMemoryDisabled(agent);
   const inlineMemoryRegistered = params.memoryAvailable === true && agentRequestsMemory;
   if (inlineMemoryRegistered) {
     const memoryResult = registerMemoryTools({

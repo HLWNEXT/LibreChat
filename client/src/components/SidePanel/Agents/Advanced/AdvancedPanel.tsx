@@ -7,6 +7,7 @@ import BackButton from '~/components/SidePanel/BackButton';
 import { useAgentPanelContext } from '~/Providers';
 import MaxAgentSteps from './MaxAgentSteps';
 import { groupHeadingClass } from './ui';
+import AgentMemory from './AgentMemory';
 import AgentChain from './AgentChain';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
@@ -50,6 +51,7 @@ export default function AdvancedPanel() {
         <section className="flex flex-col gap-3">
           <span className={groupHeadingClass}>{localize('com_ui_essentials')}</span>
           <MaxAgentSteps />
+          <AgentMemory />
         </section>
 
         {(chainIds?.length ?? 0) > 0 && (

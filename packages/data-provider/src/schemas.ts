@@ -463,6 +463,8 @@ export const defaultAgentFormValues = {
     | undefined,
   /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
   memory_scope: undefined as MemoryScope | undefined,
+  /** New agents start with memory off; an agent saved before this setting existed has it unset, which keeps memory on */
+  memory_enabled: false,
 };
 
 export const ImageVisionTool: FunctionTool = {

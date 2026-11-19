@@ -194,6 +194,11 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
       enum: ['user', 'agent'],
       default: undefined,
     },
+    /** `false` opts the agent out of memory; unset keeps the legacy behavior (memory on) */
+    memory_enabled: {
+      type: Boolean,
+      default: undefined,
+    },
     tenantId: {
       type: String,
       index: true,

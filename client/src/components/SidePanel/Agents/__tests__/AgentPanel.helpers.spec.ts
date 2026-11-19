@@ -65,6 +65,18 @@ const createForm = (): AgentForm => ({
 });
 
 describe('composeAgentUpdatePayload', () => {
+  it('sends the per-agent memory setting, including an explicit opt-out', () => {
+    const options = { instructionsPromptChanged: false };
+    const form = createForm();
+    form.memory_enabled = false;
+    expect(composeAgentUpdatePayload(form, 'agent_123', undefined, options).payload).toMatchObject({
+      memory_enabled: false,
+    });
+    form.memory_enabled = true;
+    expect(composeAgentUpdatePayload(form, 'agent_123', undefined, options).payload).toMatchObject({
+      memory_enabled: true,
+    });
+  });
   it('preserves a legacy chain on unrelated saves and sends explicit removal', () => {
     const form = createForm();
     form.agent_ids = ['first', 'second'];

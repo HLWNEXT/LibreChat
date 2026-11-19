@@ -478,9 +478,24 @@ type GetRoleByName = (
 ) => Promise<IRole | null>;
 
 type InlineMemoryAgent =
-  | { id?: string; tools?: unknown[]; memoryToolsRegistered?: boolean; memory_scope?: MemoryScope }
+  | {
+      id?: string;
+      tools?: unknown[];
+      memoryToolsRegistered?: boolean;
+      memory_scope?: MemoryScope;
+      memory_enabled?: boolean;
+    }
   | null
   | undefined;
+
+/**
+ * Whether an agent opted out of memory. Only an explicit `false` counts, so
+ * agents created before the setting existed (and ephemeral agents) keep using
+ * memory exactly as they did.
+ */
+export function isAgentMemoryDisabled(agent: InlineMemoryAgent): boolean {
+  return agent?.memory_enabled === false;
+}
 
 /**
  * Resolves the memory partition an agent reads/writes: its persisted id when
@@ -506,7 +521,7 @@ export function getMemoryAgentId(agent: InlineMemoryAgent): string | undefined {
  * name (that name only collides at the tool level, not the capability marker).
  */
 export function agentHasInlineMemoryTools(agent: InlineMemoryAgent): boolean {
-  if (!agent) {
+  if (!agent || isAgentMemoryDisabled(agent)) {
     return false;
   }
   /** An initialized config carries an explicit boolean: honor it so an agent
