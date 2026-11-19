@@ -54,6 +54,8 @@ export type AgentForm = {
   skills_scope?: SkillsScope;
   /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
   memory_scope?: MemoryScope;
+  /** Whether this agent uses memory; legacy agents with no stored value load as on */
+  memory_enabled?: boolean;
   /** Sharing scope for stateful Code API workspaces. */
   stateful_code_environment?: StatefulCodeEnvironment;
   /** Operator-configured managed or attached execution environment. */

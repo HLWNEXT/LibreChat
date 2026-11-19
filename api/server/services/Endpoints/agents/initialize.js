@@ -1276,6 +1276,7 @@ const initializeClientWithProvider = async ({
         model_parameters: { model: agent.model_parameters?.model },
         recursion_limit: agent.recursion_limit,
         memory_scope: agent.memory_scope,
+        memory_enabled: agent.memory_enabled,
         memoryToolsRegistered:
           memoryAvailable === true && agent.tools?.includes(Tools.memory) === true,
         subagents: agent.subagents,
@@ -1609,6 +1610,7 @@ const initializeClientWithProvider = async ({
             model_parameters: metadata.model_parameters,
             recursion_limit: metadata.recursion_limit,
             memory_scope: metadata.memory_scope,
+            memory_enabled: metadata.memory_enabled,
             memoryToolsRegistered: metadata.memoryToolsRegistered,
             subagents: metadata.subagents,
             configId: metadata.configId,

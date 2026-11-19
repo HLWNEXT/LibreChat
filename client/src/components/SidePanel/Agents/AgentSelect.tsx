@@ -154,6 +154,7 @@ function AgentSelect({
         avatar_preview: fullAgent.avatar?.filepath ?? '',
         avatar_action: null,
         stateful_code_environment: fullAgent.stateful_code_environment ?? 'user',
+        memory_enabled: fullAgent.memory_enabled ?? true,
         code_environment_id: fullAgent.code_environment_id,
         code_environment_ids: fullAgent.code_environment_ids ?? [],
         repositoryInstructions: fullAgent.repositoryInstructions,

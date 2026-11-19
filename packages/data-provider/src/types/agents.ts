@@ -1206,6 +1206,8 @@ export type Agent = {
   subagents?: AgentSubagentsConfig;
   /** Memory partition: `agent` isolates memories per (user, agent); default shared pool */
   memory_scope?: MemoryScope;
+  /** `false` opts this agent out of memory entirely; unset keeps the legacy behavior (memory on) */
+  memory_enabled?: boolean;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -1248,6 +1250,7 @@ export type AgentCreateParams = {
   | 'skills_scope'
   | 'subagents'
   | 'memory_scope'
+  | 'memory_enabled'
 >;
 
 export type AgentUpdateParams = {
@@ -1289,6 +1292,7 @@ export type AgentUpdateParams = {
   | 'skills_scope'
   | 'subagents'
   | 'memory_scope'
+  | 'memory_enabled'
 >;
 
 /**

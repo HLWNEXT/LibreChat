@@ -9001,6 +9001,40 @@ describe('AgentClient - titleConvo', () => {
       expect(parallelAgent2.additional_instructions ?? '').not.toContain(memoryContent);
     });
 
+    it('keeps memory out of an agent that opted out of memory', async () => {
+      const memoryContent = 'User prefers dark mode. User is a software developer.';
+      client.useMemory = jest
+        .fn()
+        .mockResolvedValue({ withKeys: memoryContent, withoutKeys: memoryContent });
+      client.options.agent.memory_enabled = false;
+      client.agentConfigs = new Map();
+
+      await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Hello',
+            isCreatedByUser: true,
+          },
+        ],
+        null,
+        { instructions: 'Base instructions', additional_instructions: null },
+      );
+
+      expect(client.options.agent.additional_instructions ?? '').not.toContain(memoryContent);
+      expect(client.options.agent.instructions).not.toContain(memoryContent);
+    });
+
+    it('skips loading and processing memory for an agent that opted out of memory', async () => {
+      client.options.agent.memory_enabled = false;
+      client.processMemory = jest.fn();
+
+      await expect(AgentClient.prototype.useMemory.call(client)).resolves.toBeUndefined();
+      expect(require('~/models').getFormattedMemories).not.toHaveBeenCalled();
+    });
+
     it('keeps empty-store memory guidance out of an agent that cannot use memory', async () => {
       const { memoryInstructions } = require('@librechat/api');
       client.useMemory = jest.fn().mockResolvedValue({ withKeys: '', withoutKeys: '' });

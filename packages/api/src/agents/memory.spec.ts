@@ -17,6 +17,7 @@ import {
   getRequestMemories,
   buildInlineMemoryTool,
   createDeleteMemoryTool,
+  isAgentMemoryDisabled,
   invalidateRequestMemories,
   agentHasInlineMemoryTools,
   buildInlineMemoryContext,
@@ -923,10 +924,31 @@ describe('buildInlineMemoryTool read failure', () => {
   });
 });
 
+describe('isAgentMemoryDisabled', () => {
+  it('only treats an explicit false as opted out', () => {
+    expect(isAgentMemoryDisabled({ memory_enabled: false })).toBe(true);
+    expect(isAgentMemoryDisabled({ memory_enabled: true })).toBe(false);
+  });
+
+  it('keeps legacy and ephemeral agents on memory', () => {
+    expect(isAgentMemoryDisabled({ id: 'agent_legacy' })).toBe(false);
+    expect(isAgentMemoryDisabled(null)).toBe(false);
+    expect(isAgentMemoryDisabled(undefined)).toBe(false);
+  });
+});
+
 describe('agentHasInlineMemoryTools', () => {
   it('returns false for a nullish agent', () => {
     expect(agentHasInlineMemoryTools(null)).toBe(false);
     expect(agentHasInlineMemoryTools(undefined)).toBe(false);
+  });
+
+  it('returns false for an opted-out agent even when the capability marker or flag is present', () => {
+    expect(agentHasInlineMemoryTools({ memory_enabled: false, tools: ['memory'] })).toBe(false);
+    expect(
+      agentHasInlineMemoryTools({ memory_enabled: false, memoryToolsRegistered: true, tools: [] }),
+    ).toBe(false);
+    expect(agentHasInlineMemoryTools({ memory_enabled: true, tools: ['memory'] })).toBe(true);
   });
 
   it('honors an explicit memoryToolsRegistered flag over the raw marker', () => {

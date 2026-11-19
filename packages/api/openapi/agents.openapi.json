@@ -2487,6 +2487,9 @@
               "agent"
             ]
           },
+          "memory_enabled": {
+            "type": "boolean"
+          },
           "agent_ids": {
             "type": "array",
             "items": {
@@ -2973,6 +2976,9 @@
               "user",
               "agent"
             ]
+          },
+          "memory_enabled": {
+            "type": "boolean"
           },
           "agent_ids": {
             "type": "array",
@@ -3498,6 +3504,9 @@
               "user",
               "agent"
             ]
+          },
+          "memory_enabled": {
+            "type": "boolean"
           },
           "agent_ids": {
             "type": "array",

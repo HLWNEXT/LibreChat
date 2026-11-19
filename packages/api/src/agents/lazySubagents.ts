@@ -40,6 +40,7 @@ type VersionedAgent = Pick<
   | 'hide_sequential_outputs'
   | 'subagents'
   | 'memory_scope'
+  | 'memory_enabled'
   | 'instructionsPrompt'
 > & {
   version?: number;
@@ -116,6 +117,7 @@ export function selectLazySubagentConfig(agent: VersionedAgent): Omit<VersionedA
     hide_sequential_outputs,
     subagents,
     memory_scope,
+    memory_enabled,
     actions,
     mcpServerNames,
   } = agent;
@@ -151,6 +153,7 @@ export function selectLazySubagentConfig(agent: VersionedAgent): Omit<VersionedA
     hide_sequential_outputs,
     subagents,
     memory_scope,
+    memory_enabled,
     actions,
     mcpServerNames,
   };

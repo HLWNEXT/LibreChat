@@ -136,6 +136,7 @@ const {
   normalizeAgentEventActorSummary,
   getRequestMemories,
   getMemoryAgentId,
+  isAgentMemoryDisabled,
   createMemoryProcessor,
   agentHasInlineMemoryTools,
   loadAgent: loadAgentFn,
@@ -757,6 +758,7 @@ class AgentClient extends BaseClient {
             recursion_limit: agent.recursion_limit,
             subagents: agent.subagents,
             memory_scope: agent.memory_scope,
+            memory_enabled: agent.memory_enabled,
             skills_enabled: agent.skills_enabled,
             skill_authoring_enabled: agent.skill_authoring_enabled,
             skills_scope: agent.skills_scope,
@@ -3100,7 +3102,10 @@ class AgentClient extends BaseClient {
       const agentRunContextParts = [sharedRunContext];
       const agentMemoryContexts = [];
       const agentHasMemory = agentHasInlineMemoryTools(agent);
-      if (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory) {
+      const agentUsesMemory =
+        !isAgentMemoryDisabled(agent) &&
+        (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory);
+      if (agentUsesMemory) {
         const partitionMemories = await getAgentPartitionMemories(agent);
         const canonicalMemories =
           partitionMemories != null ? await getCanonicalAgentMemories(agent) : undefined;
@@ -3319,7 +3324,7 @@ class AgentClient extends BaseClient {
    */
   async useMemory() {
     const user = this.options.req.user;
-    if (user.personalization?.memories === false) {
+    if (user.personalization?.memories === false || isAgentMemoryDisabled(this.options.agent)) {
       return;
     }
     const hasAccess = await checkAccess({

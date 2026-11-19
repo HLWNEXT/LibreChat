@@ -26,6 +26,25 @@ import {
 const validGroupId = '507f1f77bcf86cd799439011';
 const validPromptId = '507f191e810c19729de860ea';
 
+describe('agent memory_enabled validation', () => {
+  const base = { provider: 'openAI', model: 'gpt-4o-mini', tools: [] };
+
+  it.each([true, false])('accepts memory_enabled=%s on create and update', (memory_enabled) => {
+    expect(agentCreateSchema.parse({ ...base, memory_enabled }).memory_enabled).toBe(
+      memory_enabled,
+    );
+    expect(agentUpdateSchema.parse({ memory_enabled }).memory_enabled).toBe(memory_enabled);
+  });
+
+  it('leaves memory_enabled unset when omitted so legacy agents keep memory', () => {
+    expect(agentCreateSchema.parse(base).memory_enabled).toBeUndefined();
+  });
+
+  it('rejects a non-boolean memory_enabled', () => {
+    expect(agentCreateSchema.safeParse({ ...base, memory_enabled: 'off' }).success).toBe(false);
+  });
+});
+
 describe('agent Git identity validation', () => {
   const base = { provider: 'openAI', model: 'gpt-4o-mini', tools: [] };
 

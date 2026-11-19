@@ -502,6 +502,8 @@
   "com_agents_mcp_icon_size": "Minimum size 128 x 128 px",
   "com_agents_mcp_name_placeholder": "Custom Tool",
   "com_agents_mcp_trust_subtext": "Custom connectors are not verified by LibreChat",
+  "com_agents_memory_enabled": "Use memory",
+  "com_agents_memory_enabled_info": "Lets this agent read your saved memories and learn from your conversations. When off, this agent ignores memory entirely. New agents start with memory off.",
   "com_agents_memory_info": "Lets this agent remember useful details about you as you chat, and update or forget them when they change.",
   "com_agents_memory_scope_agent": "This agent only",
   "com_agents_memory_scope_info": "This agent keeps its own memories, apart from your shared memories and from other agents. It won't see the memories you've already saved.",
